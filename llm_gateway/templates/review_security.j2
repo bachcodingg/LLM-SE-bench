@@ -1,0 +1,32 @@
+You are a Java security expert. Perform a security review of the following code.
+
+## Source Code
+
+```java
+{{ source_code }}
+```
+
+## Security Review Checklist
+
+Check for the following vulnerability classes (OWASP Top 10 relevant to Java):
+
+- **Injection** — SQL injection, command injection, LDAP injection.
+- **Sensitive Data Exposure** — Logging of credentials, PII, or tokens.
+- **Insecure Deserialization** — Use of `ObjectInputStream`, `readObject`.
+- **XML/XXE** — Unsafe XML parsing without disabling external entities.
+- **Broken Access Control** — Missing authorisation checks.
+- **Cryptographic Issues** — Weak algorithms (MD5, SHA-1, DES), hardcoded keys.
+- **Dependency Issues** — Use of deprecated or known-vulnerable APIs.
+
+## Output Format
+
+Return a JSON object:
+```json
+{
+  "severity": "CRITICAL|HIGH|MEDIUM|LOW|NONE",
+  "vulnerabilities": [
+    {"type": "<vuln type>", "line_hint": "<approximate location>", "description": "<details>", "cwe": "<CWE-ID>"}
+  ],
+  "recommendations": ["<recommendation 1>", "<recommendation 2>"]
+}
+```

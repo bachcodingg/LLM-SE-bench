@@ -1,0 +1,25 @@
+# Audit Profile — Optimised for code review and maintenance planning
+# Quality 30%, Correctness 30%, Consistency 20%, Cost 15%, Speed 5%
+
+name: Audit
+description: >
+  Optimised for code review, security audits, and maintenance planning
+  where code quality and correctness are paramount.  Consistency across
+  runs matters for reproducible audit trails.  Speed is unimportant.
+
+weights:
+  quality: 0.30
+  correctness: 0.30
+  consistency: 0.20
+  cost: 0.15
+  speed: 0.05
+
+constraints:
+  max_latency_ms: 120000
+  max_cost_usd: 0.50
+  min_pass_rate: 0.80
+
+tags:
+  - compliance
+  - code-review
+  - maintenance

@@ -1,0 +1,25 @@
+# Budget Profile — Optimised for resource-constrained teams
+# Cost 40%, Correctness 30%, Speed 15%, Quality 10%, Consistency 5%
+
+name: Budget
+description: >
+  Optimised for resource-constrained teams where cost is the dominant
+  factor.  Correctness still matters—cheap but wrong is useless—but
+  quality polish and consistency are secondary.
+
+weights:
+  cost: 0.40
+  correctness: 0.30
+  speed: 0.15
+  quality: 0.10
+  consistency: 0.05
+
+constraints:
+  max_latency_ms: 60000
+  max_cost_usd: 0.02
+  min_pass_rate: 0.60
+
+tags:
+  - cost-sensitive
+  - startup
+  - prototyping

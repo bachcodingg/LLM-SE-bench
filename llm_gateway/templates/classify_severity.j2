@@ -1,0 +1,41 @@
+You are a software quality expert. Classify the severity of the following issue found in Java code.
+
+## Issue Description
+
+{{ issue_description }}
+
+## Affected Code
+
+```java
+{{ affected_code }}
+```
+{% if context is defined and context %}
+
+## Additional Context
+
+{{ context }}
+{% endif %}
+
+## Severity Classification
+
+Classify the severity using the following scale:
+
+| Level    | Meaning |
+|----------|---------|
+| CRITICAL | Causes data loss, security breach, or system crash in production. |
+| HIGH     | Major functionality broken; likely to affect many users. |
+| MEDIUM   | Partial functionality affected; workaround exists. |
+| LOW      | Minor cosmetic or style issue; does not affect functionality. |
+| INFO     | Suggestion or improvement, no defect. |
+
+## Output Format
+
+Return a JSON object:
+```json
+{
+  "severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO",
+  "rationale": "<one-paragraph explanation>",
+  "affected_components": ["<component 1>"],
+  "fix_priority": "IMMEDIATE|NEXT_SPRINT|BACKLOG"
+}
+```

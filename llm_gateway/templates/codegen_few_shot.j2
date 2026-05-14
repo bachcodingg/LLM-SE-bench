@@ -1,0 +1,24 @@
+You are an expert Java software engineer. Study the examples below, then solve the target problem.
+
+## Examples
+{% for ex in examples %}
+
+### Example {{ loop.index }}
+
+**Problem:** {{ ex.problem }}
+
+**Solution:**
+```java
+{{ ex.solution }}
+```
+{% endfor %}
+
+## Target Problem: {{ title }}
+
+{{ description }}
+
+## Your Solution
+
+Implement the solution following the same style as the examples above.
+
+```java

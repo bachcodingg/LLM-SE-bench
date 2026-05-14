@@ -1,0 +1,25 @@
+# DevOps Profile — Optimised for CI/CD integration where latency matters
+# Speed 35%, Cost 25%, Correctness 25%, Quality 10%, Consistency 5%
+
+name: DevOps
+description: >
+  Optimised for CI/CD integration pipelines where response latency and
+  cost efficiency dominate. Correctness is important but secondary to
+  throughput.  Quality and consistency are nice-to-haves.
+
+weights:
+  speed: 0.35
+  cost: 0.25
+  correctness: 0.25
+  quality: 0.10
+  consistency: 0.05
+
+constraints:
+  max_latency_ms: 30000
+  max_cost_usd: 0.10
+  min_pass_rate: 0.50
+
+tags:
+  - ci-cd
+  - automation
+  - throughput

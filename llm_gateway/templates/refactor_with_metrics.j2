@@ -1,0 +1,33 @@
+You are an expert Java software engineer. Refactor the class below using the provided CK metrics as a guide.
+
+## Refactoring Task
+
+{{ task_description }}
+
+## Class to Refactor: {{ class_name }}
+
+```java
+{{ source_code }}
+```
+
+## CK Metrics (Current State)
+
+| Metric | Value | Meaning |
+|--------|-------|---------|
+| WMC    | {{ wmc }} | Weighted Methods per Class |
+| CBO    | {{ cbo }} | Coupling Between Objects |
+| LCOM   | {{ lcom }} | Lack of Cohesion in Methods |
+| RFC    | {{ rfc }} | Response for a Class |
+| LOC    | {{ loc }} | Lines of Code |
+
+## Refactoring Goals
+
+- Reduce **WMC** by extracting helper methods into utility classes.
+- Reduce **CBO** by applying dependency inversion or introducing interfaces.
+- Reduce **LCOM** by grouping related methods and fields.
+- Keep **RFC** manageable by limiting the number of distinct methods called.
+- Return the complete refactored code inside a code fence.
+
+## Refactored Code
+
+```java

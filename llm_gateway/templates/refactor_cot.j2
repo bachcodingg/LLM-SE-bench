@@ -1,0 +1,31 @@
+You are an expert Java software engineer. Analyse the class step by step before refactoring.
+
+## Refactoring Task
+
+{{ task_description }}
+
+## Class to Refactor: {{ class_name }}
+
+```java
+{{ source_code }}
+```
+
+## Analysis Instructions
+
+Think step by step:
+1. Identify all responsibilities currently handled by `{{ class_name }}`.
+2. Assess cohesion: are the fields and methods tightly related?
+3. Assess coupling: what external classes does this class depend on?
+4. Identify natural boundaries for extraction (e.g. distinct data groups, distinct workflows).
+5. Plan the target class hierarchy with clear names and responsibilities.
+6. Write the refactored code.
+
+Pay special attention to **cohesion** — each resulting class should have one clear purpose.
+
+## Reasoning
+
+<!-- Write your step-by-step analysis here -->
+
+## Refactored Code
+
+```java

@@ -1,0 +1,67 @@
+cff-version: 1.2.0
+title: "llm-se-bench: an execution-based benchmark harness for LLMs on Java software-engineering tasks"
+message: "If you use this software or its task data, please cite it."
+type: software
+authors:
+  - given-names: "Gia Bach"
+    family-names: "Vo"
+    email: "hung072912@gmail.com"
+# TODO(before first push): replace <OWNER> with the GitHub account this is
+# published under. grep for "<OWNER>" to find every place it appears.
+repository-code: "https://github.com/<OWNER>/llm-se-bench"
+abstract: >-
+  llm-se-bench evaluates large language models on Java code generation, bug
+  fixing and God Class refactoring inside a deterministic Docker sandbox.
+  It records per-call cost and latency for every API call, extracts
+  Chidamber-Kemerer design metrics from generated code, and runs
+  non-parametric significance tests over the resulting outcomes. The
+  published run covers 58 tasks across four datasets and three frontier
+  models, 522 evaluations in total.
+keywords:
+  - "large language models"
+  - "benchmark"
+  - "software engineering"
+  - "code generation"
+  - "program repair"
+  - "refactoring"
+  - "java"
+  - "ck metrics"
+  - "cost accounting"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2026-09-18"
+references:
+  - type: article
+    title: "Evaluating Large Language Models Trained on Code"
+    authors:
+      - family-names: "Chen"
+        given-names: "Mark"
+    year: 2021
+    notes: "HumanEval; source of the humaneval-java problem statements."
+  - type: article
+    title: "Program Synthesis with Large Language Models"
+    authors:
+      - family-names: "Austin"
+        given-names: "Jacob"
+    year: 2021
+    notes: "MBPP; source of the mbpp-java problem statements."
+  - type: conference-paper
+    title: "Defects4J: A Database of Existing Faults to Enable Controlled Testing Studies for Java Programs"
+    authors:
+      - family-names: "Just"
+        given-names: "Rene"
+      - family-names: "Jalali"
+        given-names: "Darioush"
+      - family-names: "Ernst"
+        given-names: "Michael D."
+    year: 2014
+    notes: "Source of the defect descriptions reconstructed in the defects4j tasks."
+  - type: article
+    title: "A Metrics Suite for Object Oriented Design"
+    authors:
+      - family-names: "Chidamber"
+        given-names: "Shyam R."
+      - family-names: "Kemerer"
+        given-names: "Chris F."
+    year: 1994
+    notes: "The CK metrics implemented in quality/ck_metrics.py."

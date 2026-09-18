@@ -1,0 +1,16 @@
+model_id,dataset,problems,evaluations,passed,pass_rate,mean_weighted_score,mean_latency_s,api_calls,total_cost_usd,cost_usd_per_evaluation
+claude-sonnet-4-6,ALL,58,174,174,1.0,1.0,6.47,222,2.5825,0.014842
+claude-sonnet-4-6,defects4j,10,30,30,1.0,1.0,4.8,,,
+claude-sonnet-4-6,godclass,7,21,21,1.0,1.0,27.81,,,
+claude-sonnet-4-6,humaneval-java,23,69,69,1.0,1.0,3.42,,,
+claude-sonnet-4-6,mbpp-java,18,54,54,1.0,1.0,2.97,,,
+gemini-2.5-flash,ALL,58,174,169,0.9713,0.977,21.05,233,0.094,0.00054
+gemini-2.5-flash,defects4j,10,30,30,1.0,1.0,39.25,,,
+gemini-2.5-flash,godclass,7,21,19,0.9048,0.9048,38.87,,,
+gemini-2.5-flash,humaneval-java,23,69,69,1.0,1.0,10.29,,,
+gemini-2.5-flash,mbpp-java,18,54,51,0.9444,0.963,17.75,,,
+gpt-4o,ALL,58,174,174,1.0,1.0,3.66,217,0.8476,0.004871
+gpt-4o,defects4j,10,30,30,1.0,1.0,3.11,,,
+gpt-4o,godclass,7,21,21,1.0,1.0,8.97,,,
+gpt-4o,humaneval-java,23,69,69,1.0,1.0,2.84,,,
+gpt-4o,mbpp-java,18,54,54,1.0,1.0,2.96,,,

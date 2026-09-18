@@ -20,7 +20,10 @@ import pytest
 
 from contracts import Problem, TestCase, TestSuite, VerificationResult
 from bench.datasets.base import Dataset
-from bench.datasets.humaneval import HumanEvalDataset
+from bench.datasets.humaneval import (
+    _EXAMPLE_PROBLEMS,
+    HumanEvalDataset,
+)
 from bench.datasets.mbpp import MBPPDataset
 from bench.datasets.defects4j import Defects4JDataset
 from bench.datasets.godclass import GodClassDataset
@@ -230,8 +233,11 @@ class TestHumanEvalDataset(DatasetInterfaceTests):
 
         ds = HumanEvalDataset(data_dir=tmp_path / "data")
         problems = ds.load_problems()
-        assert len(problems) == 1
-        assert problems[0].problem_id == "HumanEval_test"
+        # load_problems() returns the built-in examples *plus* the JSONL,
+        # so the file adds to the set rather than replacing it.
+        assert len(problems) == len(_EXAMPLE_PROBLEMS) + 1
+        ids = [p.problem_id for p in problems]
+        assert "HumanEval_test" in ids
         suite = ds.get_test_suite("HumanEval_test")
         assert len(suite.cases) == 1
 
@@ -489,4 +495,7 @@ class TestDatasetEdgeCases:
         )
         ds = HumanEvalDataset(data_dir=tmp_path / "data")
         problems = ds.load_problems()
-        assert len(problems) == 2
+        # Two of the three JSONL lines parse; the built-ins are always there.
+        assert len(problems) == len(_EXAMPLE_PROBLEMS) + 2
+        ids = [p.problem_id for p in problems]
+        assert "good" in ids and "also_good" in ids

@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# No API keys are available to this workflow, by design. Every job here
+# runs offline: the sandbox falls back to dry-run when Docker is absent
+# and the gateway is never asked to make a real call.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: security sweep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The history scan needs history. Without this the sweep only
+          # sees the tip commit and reports clean on a dirty repo.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Scan working tree and full history for credentials
+        run: python scripts/security_sweep.py
+
+  test:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q --tb=short
+      - name: Validate datasets
+        run: llm-se-bench datasets validate --dataset all
+
+  smoke:
+    name: end-to-end smoke (dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+      - name: Run the pipeline without spending anything
+        run: |
+          llm-se-bench run --dataset humaneval --models claude --limit 3 \
+            --dry-run --output-dir /tmp/smoke-results
+      - name: Confirm the run produced results
+        run: |
+          test -s /tmp/smoke-results/humaneval-java/claude-sonnet-4-6/results.jsonl
+      - name: Start each MCP server and confirm it registers its tools
+        run: python -m mcp_servers --self-test

@@ -37,13 +37,25 @@ coverage.xml
 *.swp
 *.swo
 
+# Local databases — the response cache holds full prompts and model
+# outputs. Ship the schema and a migration, never the data.
+*.db
+*.sqlite
+*.sqlite3
+cache/
+
 # Outputs (generated, not source)
-results/
 quality/
 analysis/
 reports/
-llm_cache.db
 *.log
+
+# results/ is generated too, with one exception: the published run
+# artifact the README points at. git will not descend into an ignored
+# directory, so ignore the contents rather than the directory itself.
+results/*
+!results/2026-05-run/
+!results/2026-05-run/**
 
 # OS
 .DS_Store

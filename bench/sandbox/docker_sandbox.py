@@ -203,6 +203,153 @@ class DockerSandbox:
                 # Clean up temp dir
                 shutil.rmtree(staging_dir, ignore_errors=True)
 
+    def compile_files(
+        self,
+        files: dict[str, str],
+        problem_id: str = "adhoc",
+    ) -> SandboxResult:
+        """
+        Compile an arbitrary set of Java sources, without running anything.
+
+        ``run`` handles the benchmark's shape — one class, one suite.  This
+        handles the tool-layer's shape: N files, compile only, report
+        diagnostics.  Test sources are staged alongside production sources
+        and compiled together, because a suite that does not compile against
+        the code under test is a compile failure worth reporting.
+
+        Parameters
+        ----------
+        files : dict[str, str]
+            ``{filename: content}``.  Names are flattened to their basename
+            when staged, so ``a/b/C.java`` and ``C.java`` collide.
+        problem_id : str
+            Label used for the staging directory and in the result.
+
+        Returns
+        -------
+        SandboxResult
+            Only the compilation fields are populated; test counts stay 0.
+        """
+        java_files = {
+            Path(name).name: content
+            for name, content in files.items()
+            if name.endswith(".java")
+        }
+        if not java_files:
+            return SandboxResult(
+                problem_id=problem_id,
+                error_message="No .java files supplied",
+            )
+
+        if self.dry_run or not self.is_docker_available():
+            combined = "\n".join(java_files.values())
+            return self._dry_run_check(combined, "", problem_id)
+
+        staging_dir = self._create_staging_dir(problem_id)
+        try:
+            src_dir = staging_dir / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            for name, content in java_files.items():
+                (src_dir / name).write_text(content, encoding="utf-8")
+
+            result = self._docker_compile_sources(staging_dir)
+            result.problem_id = problem_id
+            return result
+        except Exception as exc:
+            logger.error("Sandbox compile error for %s: %s", problem_id, exc)
+            return SandboxResult(
+                problem_id=problem_id,
+                error_message=f"Sandbox exception: {exc}",
+            )
+        finally:
+            if self.work_dir is None:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
+    def run_files(
+        self,
+        files: dict[str, str],
+        test_class_name: str | None = None,
+        problem_id: str = "adhoc",
+    ) -> SandboxResult:
+        """
+        Compile an arbitrary set of Java sources and run one JUnit class.
+
+        Parameters
+        ----------
+        files : dict[str, str]
+            ``{filename: content}``, production and test sources together.
+        test_class_name : str | None
+            Test class to hand to ``JUnitCore``.  When None, the first file
+            whose source contains ``@Test`` supplies it.
+        problem_id : str
+            Label used for the staging directory and in the result.
+
+        Returns
+        -------
+        SandboxResult
+            Compilation *and* test fields.  A compile failure short-circuits:
+            no tests are run and ``tests_total`` stays 0.
+        """
+        java_files = {
+            Path(name).name: content
+            for name, content in files.items()
+            if name.endswith(".java")
+        }
+        if not java_files:
+            return SandboxResult(
+                problem_id=problem_id,
+                error_message="No .java files supplied",
+            )
+
+        if test_class_name is None:
+            for name, content in java_files.items():
+                if "@Test" in content:
+                    test_class_name = self._extract_class_name(content) or Path(name).stem
+                    break
+
+        if self.dry_run or not self.is_docker_available():
+            sources = "\n".join(
+                content for content in java_files.values() if "@Test" not in content
+            )
+            tests = "\n".join(
+                content for content in java_files.values() if "@Test" in content
+            )
+            return self._dry_run_check(sources or tests, tests, problem_id)
+
+        staging_dir = self._create_staging_dir(problem_id)
+        try:
+            src_dir = staging_dir / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            for name, content in java_files.items():
+                (src_dir / name).write_text(content, encoding="utf-8")
+
+            result = self._docker_compile_sources(staging_dir)
+            result.problem_id = problem_id
+            if not result.compiled or not test_class_name:
+                if not test_class_name:
+                    result.error_message = "No test class found in the supplied sources"
+                return result
+
+            test_result = self._docker_test(staging_dir, test_class_name)
+            result.tests_passed = test_result.tests_passed
+            result.tests_total = test_result.tests_total
+            result.test_stdout = test_result.test_stdout
+            result.test_stderr = test_result.test_stderr
+            result.test_time_ms = test_result.test_time_ms
+            result.exit_code = test_result.exit_code
+            result.timed_out = test_result.timed_out
+            result.individual_results = test_result.individual_results
+            return result
+        except Exception as exc:
+            logger.error("Sandbox run error for %s: %s", problem_id, exc)
+            return SandboxResult(
+                problem_id=problem_id,
+                error_message=f"Sandbox exception: {exc}",
+            )
+        finally:
+            if self.work_dir is None:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+
     def is_docker_available(self) -> bool:
         """Check if Docker daemon is reachable."""
         if self._docker_available is not None:
@@ -334,6 +481,51 @@ class DockerSandbox:
                 result.error_message = f"Compilation failed: {proc.stderr[:500]}"
                 logger.debug("Compilation failed for %s: %s", class_name, proc.stderr[:200])
 
+        except subprocess.TimeoutExpired:
+            result.timed_out = True
+            result.error_message = f"Compilation timed out after {self.timeout_compile}s"
+            result.compile_time_ms = self.timeout_compile * 1000
+
+        return result
+
+    def _docker_compile_sources(self, staging_dir: Path) -> SandboxResult:
+        """Compile every ``src/*.java`` in *staging_dir* inside the container.
+
+        Differs from :meth:`_docker_compile` only in globbing ``src/`` rather
+        than the fixed ``src/ + test/`` pair, so it works for N files.
+        """
+        result = SandboxResult()
+
+        cmd = [
+            "docker", "run", "--rm",
+            "--network=none",
+            "--memory=256m",
+            "--cpus=1",
+            "-v", f"{staging_dir}:/workspace:rw",
+            self.docker_image,
+            "bash", "-c",
+            (
+                "cd /workspace && "
+                "javac -encoding UTF-8 -cp /usr/share/java/junit4.jar:. "
+                "-d out src/*.java 2>&1"
+            ),
+        ]
+
+        start = time.monotonic()
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_compile,
+            )
+            result.compile_time_ms = (time.monotonic() - start) * 1000
+            result.compile_stdout = proc.stdout
+            result.compile_stderr = proc.stderr
+            result.compiled = proc.returncode == 0
+            if not result.compiled:
+                combined = (proc.stdout + proc.stderr).strip()
+                result.error_message = f"Compilation failed: {combined[:500]}"
         except subprocess.TimeoutExpired:
             result.timed_out = True
             result.error_message = f"Compilation timed out after {self.timeout_compile}s"

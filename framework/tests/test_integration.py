@@ -236,16 +236,19 @@ class TestEdgeCases:
             class StatisticalSummary(BaseModel):
                 metric_name: str = ""
                 model_id: str = ""
+                n: int = 0
                 mean: float = 0.0
                 std_dev: float = 0.0
                 computed_at: datetime = PField(default_factory=datetime.utcnow)
 
+        # n must be > 0: MetricAggregator ignores summaries with no samples
+        # behind them, and a criterion with no samples scores 0.
         summaries = [
-            StatisticalSummary(metric_name="pass_rate", model_id="solo", mean=0.8, std_dev=0.05),
-            StatisticalSummary(metric_name="cost_usd", model_id="solo", mean=0.03, std_dev=0.01),
-            StatisticalSummary(metric_name="latency_ms", model_id="solo", mean=2000, std_dev=300),
-            StatisticalSummary(metric_name="maintainability_index", model_id="solo", mean=70, std_dev=5),
-            StatisticalSummary(metric_name="consistency_score", model_id="solo", mean=0.9, std_dev=0.03),
+            StatisticalSummary(metric_name="pass_rate", model_id="solo", n=10, mean=0.8, std_dev=0.05),
+            StatisticalSummary(metric_name="cost_usd", model_id="solo", n=10, mean=0.03, std_dev=0.01),
+            StatisticalSummary(metric_name="latency_ms", model_id="solo", n=10, mean=2000, std_dev=300),
+            StatisticalSummary(metric_name="maintainability_index", model_id="solo", n=10, mean=70, std_dev=5),
+            StatisticalSummary(metric_name="consistency_score", model_id="solo", n=10, mean=0.9, std_dev=0.03),
         ]
 
         from framework.decision_matrix import DecisionMatrixEngine

@@ -1,0 +1,693 @@
+================================================================================
+LLM-SE-BENCH: PUBLICATION AND V2 UPGRADE GUIDE
+Prepared for Gia Bach Vo, 18 September 2026
+================================================================================
+
+CONTENTS
+
+  PART 0   Read this first: the LOC problem
+  PART 1   Ship it publicly (3 to 4 hours, do this today)
+  PART 2   MCP server wrapper (1 weekend)
+  PART 3   Agent loop (1 to 2 weekends)
+  PART 4   The v2 upgrade: 13,000 to 18,000 LOC of real work
+  PART 5   Sequencing and time budget
+  PART 6   How to describe it afterwards
+  PART 7   Risks and failure modes
+
+
+================================================================================
+PART 0. READ THIS FIRST: THE LOC PROBLEM
+================================================================================
+
+You asked for an upgrade of 10,000 to 20,000 LOC. I will give you a scope that
+lands there honestly. But you need to hear the objection first.
+
+LOC is an input metric, not an output metric. Senior engineers reading
+"24,858 LOC, 98 files, 82 classes, 474 functions" on a CV do not read
+"accomplished". A meaningful fraction read "padded, or does not know which
+numbers matter". Your genuinely impressive numbers are elsewhere in the same
+bullet and you are burying them:
+
+  - 522 evaluations across 3 frontier models with 0 test failures
+  - $3.52 total cost for 672 API calls with per-call cost attribution
+  - 0.012% integration defect rate, measured, across a parallel-developed
+    codebase
+  - Deterministic, checkpointable, reproducible Docker sandbox
+
+Those are output metrics. They survive scrutiny. LOC does not.
+
+So the rule for everything below: never target LOC. Target capability. If you
+build the ten modules in Part 4 properly, the LOC arrives as a side effect,
+somewhere between 13,000 and 18,000 lines of production code plus test code on
+top. If you find yourself adding code to hit a number, you are damaging the
+project.
+
+Report it like this instead: "extended the framework from single-shot model
+evaluation to agentic repository-level evaluation, adding N task instances,
+trajectory-level failure classification, and behaviour-preservation scoring".
+Put the LOC in the repo, not the CV.
+
+
+================================================================================
+PART 1. SHIP IT PUBLICLY (3 TO 4 HOURS, DO THIS TODAY)
+================================================================================
+
+This is the highest return per hour available to you. An unpublished 24,858 LOC
+framework is a claim. A published one is evidence. Ari cannot verify the first.
+
+--------------------------------------------------------------------------------
+1.1 SECURITY SWEEP BEFORE THE FIRST PUSH
+--------------------------------------------------------------------------------
+
+Non-negotiable. You have 98 files, three provider API keys, and an SQLite cache
+of API responses. Publishing that directly is how people leak credentials.
+
+Run in order:
+
+  1. Scan the working tree and the full git history:
+       pip install detect-secrets trufflehog3
+       detect-secrets scan --all-files > .secrets.baseline
+       trufflehog3 --no-entropy .
+     Also run:
+       git log -p | grep -iE "sk-ant|sk-proj|AIza|api[_-]?key|Bearer "
+
+  2. If a key ever touched a commit, rotate it. Do not rely on rewriting
+     history. Rotate first, then rewrite.
+
+  3. If history is dirty and rewriting is painful, take the clean option:
+     create a fresh repository, copy the current working tree in, make one
+     initial commit. You lose commit history. You keep your credentials. For a
+     portfolio repo this trade is correct.
+
+  4. Purge the SQLite response cache from the repo. It may contain full model
+     outputs, prompts, and metadata. Ship the schema and a migration, not the
+     data. Add to .gitignore:
+       *.db
+       *.sqlite3
+       .env
+       .env.*
+       results/raw/
+       cache/
+
+  5. Add .env.example with every variable name and no values:
+       ANTHROPIC_API_KEY=
+       OPENAI_API_KEY=
+       GEMINI_API_KEY=
+       LLM_SE_BENCH_BUDGET_EUR=
+       LLM_SE_BENCH_CACHE_PATH=
+
+  6. Check the 58 Java problems for licence contamination. If any were copied
+     from GPL or AGPL sources, you cannot relicense them. Either document the
+     provenance per problem or move them into a separate data repository with
+     the original licence attached.
+
+--------------------------------------------------------------------------------
+1.2 REPOSITORY STRUCTURE
+--------------------------------------------------------------------------------
+
+  llm-se-bench/
+    README.md
+    LICENSE                  Apache-2.0 (see 1.5)
+    CITATION.cff
+    CONTRIBUTING.md
+    pyproject.toml
+    .env.example
+    .github/workflows/ci.yml
+    docs/
+      architecture.md        the 5-component diagram, one page
+      methodology.md         task design, scoring, statistical tests
+      reproducing.md         exact commands to reproduce your published run
+      cost.md                cost model, caching, rate limiting
+    src/llm_se_bench/
+      gateway/               LLM Gateway
+      sandbox/               Docker Java runner
+      tasks/                 the 58 problems and loaders
+      analysis/              statistics and MCDA
+      reporting/             Dash, WeasyPrint, exporters
+    tests/
+    results/
+      2026-05-run/           the published artifact of your actual run
+        manifest.json        model versions, dates, seeds, prompt hashes
+        summary.csv
+        figures/
+
+The results/ directory is the part most student repos omit and the part that
+makes yours credible. Publish the actual numbers you produced.
+
+--------------------------------------------------------------------------------
+1.3 README SPECIFICATION
+--------------------------------------------------------------------------------
+
+Write it in this order. A reader decides in 20 seconds.
+
+  1. One sentence, plain, above the fold.
+       "An execution-based benchmark harness that evaluates LLMs on Java code
+       generation, bug fixing and architectural refactoring in a reproducible
+       Docker sandbox, with per-call cost accounting."
+
+  2. A results table, immediately. Not an architecture diagram. Results.
+       Model | Tasks | Pass rate | Mean cost/task | Mean latency
+     Three rows. This single table does more than 500 words of description.
+
+  3. One animated GIF of the Dash dashboard, 10 to 15 seconds, under 5 MB.
+     Record with peek or asciinema, compress with gifsicle.
+
+  4. Quickstart that works on a clean machine in under five commands:
+       git clone ...
+       cp .env.example .env    # add your keys
+       docker compose up -d
+       pip install -e .
+       llm-se-bench run --tasks smoke --model claude-sonnet-4-6
+
+  5. Then, and only then, architecture, methodology, limitations.
+
+  6. A "Limitations" section. Include it. 58 Java problems is a small sample,
+     LLM outputs are stochastic, single run per task limits statistical power,
+     tasks may be contaminated by training data. Writing this makes you look
+     more rigorous, not less. Reviewers who spot an unstated limitation assume
+     you missed it.
+
+--------------------------------------------------------------------------------
+1.4 REPRODUCIBILITY ARTIFACTS
+--------------------------------------------------------------------------------
+
+Pin everything. A benchmark that cannot be rerun is an anecdote.
+
+  - Exact model identifiers and API versions in manifest.json
+  - Prompt template hashes (SHA256 of each Jinja2 template at run time)
+  - Docker image digest, not tag
+  - Python lockfile (uv.lock or poetry.lock), committed
+  - Seeds for any sampling
+  - Wall-clock date of every API call
+
+--------------------------------------------------------------------------------
+1.5 LICENCE AND CITATION
+--------------------------------------------------------------------------------
+
+Apache-2.0 for the code. It includes a patent grant, which MIT does not, and it
+is what most benchmark harnesses use.
+
+For the task data, consider CC-BY-4.0 in a separate directory with its own
+LICENSE file, so people can reuse the problems without pulling in the harness.
+
+Add CITATION.cff. It costs ten minutes and matters if you cite this work in a
+master's application.
+
+
+================================================================================
+PART 2. MCP SERVER WRAPPER (1 WEEKEND)
+================================================================================
+
+Why: your framework can currently be driven by you. An MCP server lets any
+agent drive it. That is the difference between a tool and infrastructure, and
+it is the vocabulary this hackathon will be operating in.
+
+Build three servers, or one server with three tool groups. Start with one.
+
+  Server: jvm-sandbox
+    compile_java(source_files, jdk_version) -> {ok, diagnostics[]}
+    run_tests(project_path, test_filter, timeout_s) -> {passed, failed, log}
+    run_static_analysis(project_path) -> {ck_metrics, smells[]}
+    compute_ck_metrics(class_path) -> {wmc, cbo, lcom, loc, dit, rfc}
+
+  Server: llm-se-bench
+    list_tasks(category, difficulty) -> task[]
+    get_task(task_id) -> {prompt, repo_state, test_spec}
+    evaluate_patch(task_id, patch) -> {pass, metrics, cost}
+    run_benchmark(model, task_set, budget_eur) -> run_id
+    get_run_results(run_id) -> summary
+
+  Server: god-class-tools   (this is your thesis, exposed as tools)
+    detect_god_classes(project_path) -> {classes[], severity[]}
+    propose_decomposition(class_path, strategy) -> {plan, rationale}
+    score_decomposition(before, after) -> {loc_delta, coupling_delta}
+
+Implementation notes:
+
+  - Use the official Python MCP SDK. Start with stdio transport, add HTTP later.
+  - Every tool takes and returns Pydantic models. You already use Pydantic, so
+    generate the JSON schemas from your existing models rather than hand-writing
+    them.
+  - Tool descriptions are prompts. Write them for a model, not for a human.
+    State preconditions, units, and failure modes explicitly.
+  - Enforce timeouts and output truncation at the tool boundary. A 40,000 line
+    Maven log will destroy an agent's context window. Truncate to the last 200
+    lines plus the first error block.
+  - Ship a working claude_desktop_config.json snippet in the README so someone
+    can plug it in and see it work in two minutes.
+
+Deliverable that sells: a GIF of Claude Code calling detect_god_classes on a
+real Apache repository and getting structured output back. That is a 30 second
+demo that proves more than your whole CV summary.
+
+
+================================================================================
+PART 3. AGENT LOOP (1 TO 2 WEEKENDS)
+================================================================================
+
+This is the one real gap between your profile and a senior agent engineer's.
+You measure what models produce. You do not yet make them act.
+
+Minimal viable agent mode inside llm-se-bench:
+
+  Loop:
+    1. Give the agent a failing task and a tool set, not a prompt-and-pray
+       single completion.
+    2. Agent calls tools: read_file, list_dir, grep, apply_patch, run_tests.
+    3. Feed tool results back as tool_result blocks.
+    4. Repeat until tests pass, or a budget is exhausted.
+
+  Termination conditions, all of them, enforced:
+    - success (target tests pass, regression tests still pass)
+    - max_steps
+    - max_tokens
+    - max_cost_eur          <- you already have the cost plumbing
+    - no_progress (N consecutive steps with no file mutation or no test delta)
+    - wall_clock timeout
+
+  Provider abstraction:
+    Anthropic tool_use, OpenAI function calls and Gemini function declarations
+    have different shapes. Normalise to one internal ToolCall / ToolResult pair
+    and write three thin adapters. Your existing gateway is the right place for
+    this.
+
+  Record everything:
+    Every step becomes a row: step_index, thought_text, tool_name, tool_args,
+    tool_result_hash, tokens_in, tokens_out, cache_read_tokens, cost, latency,
+    files_touched, tests_passing_after.
+
+That trajectory table is the raw material for Part 4. Design it carefully now
+and the rest gets much easier.
+
+
+================================================================================
+PART 4. THE V2 UPGRADE: 13,000 TO 18,000 LOC OF REAL WORK
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 POSITIONING: WHERE THE ACTUAL RESEARCH GAP IS
+--------------------------------------------------------------------------------
+
+Do not build "another SWE-bench". That space is saturated. As of now the field
+already has SWE-bench and SWE-bench Verified, SWE-bench-java, SWE-PolyBench,
+SWE-bench Multilingual, SWE-rebench, SWE-bench Live, and a wave of 2026
+additions including SWE-Refactor, SpecBench and ProjDevBench. Building a
+generic issue-resolution benchmark in 2026 is late.
+
+Three real gaps remain, and you are unusually well placed for all three.
+
+  GAP 1: Java and the JVM are thin and badly served.
+    SWE-bench-java has 91 instances. SWE-PolyBench has 2110 instances total but
+    only 165 in Java. Reported Java resolve rates sit far below Python. The
+    bottleneck is largely environmental: EnvBench found that the best automated
+    environment setup method succeeded on only 29.5% of JVM repositories. Most
+    failures happen before any code is written. You have already built a
+    working, deterministic, checkpointable JDK 17 Docker sandbox. That is the
+    hard part and you have it.
+
+  GAP 2: Refactoring is scored as if it were bug fixing.
+    Almost every benchmark scores pass/fail on tests. For refactoring that is
+    the wrong objective function. A refactoring that changes nothing passes all
+    tests. Behaviour preservation is necessary but not sufficient. You need
+    structural improvement measured independently, and you already have the
+    instrument: the CK metrics pipeline from your thesis (WMC, CBO, LCOM, LOC,
+    DIT, RFC) plus your 4-level severity classifier.
+
+  GAP 3: Agent evaluation ignores cost and reward hacking.
+    Leaderboards report resolve rate. They rarely report euros. An agent that
+    solves 5% more tasks at 8x the cost is not obviously better, and for any
+    real team with a budget it is worse. Separately, long-horizon agents cheat:
+    they edit tests, hardcode expected values, swallow exceptions, delete
+    assertions. SpecBench (2026) exists specifically because of this. Detection
+    is mostly unsolved and mostly not instrumented.
+
+  YOUR POSITION, stated in one sentence:
+    "A repository-level agentic benchmark for JVM refactoring that scores on
+    three independent axes: behaviour preservation, structural quality change,
+    and euros spent, with automatic detection of test tampering."
+
+That is defensible, it is not a reskin of something that exists, and every
+component of it maps onto work you have already done.
+
+--------------------------------------------------------------------------------
+4.2 ARCHITECTURE
+--------------------------------------------------------------------------------
+
+    +---------------------------------------------------------------+
+    |                      Orchestrator (M1)                        |
+    |   run planner, scheduling, budget governor, checkpointing     |
+    +------+-------------------+-------------------+----------------+
+           |                   |                   |
+    +------v------+   +--------v--------+   +------v-----------+
+    | Agent       |   | Task Factory    |   | Scoring          |
+    | Harness M1  |   | M3              |   | M5 + M6          |
+    | tool loop   |   | repo mining,    |   | behaviour +      |
+    | multi-model |   | env bootstrap,  |   | structure +      |
+    |             |   | validation      |   | tamper detection |
+    +------+------+   +--------+--------+   +------+-----------+
+           |                   |                   |
+    +------v-------------------v-------------------v-----------+
+    |          Tool Layer + MCP servers (M2)                   |
+    |   jvm-sandbox, ck-metrics, god-class-tools, vcs          |
+    +------------------------+---------------------------------+
+                             |
+    +------------------------v---------------------------------+
+    |   Existing: LLM Gateway, Docker sandbox, SQLite store     |
+    +------------------------+---------------------------------+
+                             |
+    +---------+--------------+--------------+------------------+
+    | Traject.|  Cost Gov.   |  Statistics  |  Dashboard v2    |
+    |   M4    |     M7       |     M8       |   M9 + CI M10    |
+    +---------+--------------+--------------+------------------+
+
+--------------------------------------------------------------------------------
+4.3 MODULE BREAKDOWN
+--------------------------------------------------------------------------------
+
+Estimates are production code. Test code adds roughly 50% on top, consistent
+with your existing 597 tests.
+
+..............................................................................
+M1. AGENT HARNESS AND ORCHESTRATOR                        ~3,000 LOC
+..............................................................................
+The core loop from Part 3, hardened.
+
+  - Trajectory state machine with full serialisation and resume mid-episode
+  - Provider adapters: Anthropic, OpenAI, Gemini tool-calling normalisation
+  - Malformed tool call recovery (models emit invalid JSON; decide policy:
+    reprompt, repair, or count as a failed step, and make it configurable)
+  - Context management: compaction policy when the window fills, summarisation
+    of old turns, file content windowing
+  - Prompt caching control: explicit cache breakpoints, measured hit rate
+  - Parallel episode execution with a worker pool, per-worker Docker container
+  - Deterministic replay: given a recorded trajectory, rerun scoring without
+    calling any API. This is essential and most harnesses lack it.
+  - Multiple agent scaffolds behind one interface, so you can separate
+    "the model is better" from "my scaffold is better":
+      * naive single-shot (your current v1, as the baseline)
+      * ReAct-style loop
+      * plan-then-execute
+      * external harness passthrough (shell out to Claude Code or similar)
+
+The scaffold comparison is a genuine contribution. Most papers conflate model
+quality with harness quality and then publish conclusions about models.
+
+..............................................................................
+M2. TOOL LAYER AND MCP SERVERS                            ~2,200 LOC
+..............................................................................
+Part 2, expanded to production quality.
+
+  - Tool registry with Pydantic schemas, versioning, and capability flags
+  - Three MCP servers, stdio and HTTP transports
+  - Output truncation strategy per tool, with truncation recorded as metadata
+    (an agent that failed because you truncated its stack trace is your bug,
+    not the model's, and you need to be able to prove which)
+  - Permission modes: read-only, patch-only, full shell. Run the same task at
+    each level and measure what access actually buys.
+  - Tool call cost attribution: tools consume tokens through their outputs.
+    Attribute that.
+
+..............................................................................
+M3. TASK FACTORY: JVM REPOSITORY MINING AND ENV BOOTSTRAP  ~2,800 LOC
+..............................................................................
+This is the hardest module and the one with the clearest external value,
+because JVM environment setup is a documented field-wide failure point.
+
+  - GitHub mining: find merged PRs that touch code and tests together
+  - Reverse-patch construction: apply the inverse of the fix to create the task
+  - FAIL_TO_PASS and PASS_TO_FAIL test set derivation
+  - Build system detection and normalisation: Maven, Gradle Groovy, Gradle
+    Kotlin DSL, multi-module projects
+  - Offline dependency resolution: prewarm a local Maven/Gradle cache into the
+    image so runs are hermetic and do not depend on Maven Central uptime
+  - JDK version inference from build files, with a matrix of base images
+  - Task validation pipeline, run before a task is admitted:
+      * does the golden patch make FAIL_TO_PASS pass
+      * do PASS_TO_FAIL tests pass before and fail after the reverse patch
+      * run each candidate task 5 times to detect flaky tests, reject flakes
+      * is the fix reachable from the issue text alone (avoid unsolvable tasks)
+  - Contamination checks: record repository commit date versus model training
+    cutoff, and flag any task older than the cutoff as potentially memorised
+  - Target: 150 to 300 validated Java instances. That alone exceeds
+    SWE-bench-java's 91 and SWE-PolyBench's 165 Java instances.
+
+..............................................................................
+M4. TRAJECTORY ANALYSIS AND FAILURE TAXONOMY              ~2,200 LOC
+..............................................................................
+Outcome metrics tell you what happened. Process metrics tell you why.
+
+  Process metrics per episode:
+    - steps to first edit, steps to solution
+    - localisation accuracy: did it open the file the golden patch touches,
+      and at which step (precision and recall over files and functions)
+    - edit churn: lines written then reverted
+    - backtracking rate, repeated identical tool calls
+    - context utilisation over time, cache hit rate per turn
+    - tool call distribution and dead-end depth
+
+  Failure taxonomy, automatically assigned:
+    1. localisation failure (never opened the right file)
+    2. environment failure (build never succeeded)
+    3. syntactic failure (patch does not compile)
+    4. semantic failure (compiles, tests still fail)
+    5. regression (target tests pass, other tests break)
+    6. budget exhaustion (steps, tokens or euros)
+    7. loop (no progress, repeated state)
+    8. refusal or early abandonment
+    9. tamper (see M6)
+
+  Classification should be rule-based first, with an LLM-as-judge fallback only
+  for ambiguous cases. Report inter-method agreement. Never use LLM-as-judge
+  where a deterministic rule exists.
+
+  Trajectory diffing: same task, two models, aligned side by side, showing where
+  they diverged. This is the single most compelling thing in the dashboard.
+
+..............................................................................
+M5. STRUCTURAL QUALITY SCORING                            ~1,600 LOC
+..............................................................................
+Your thesis, generalised into a scoring axis. This is the differentiator.
+
+  - CK metric extraction before and after, per class and aggregated
+  - Behaviour preservation checks beyond the test suite:
+      * public API signature diff (did it break the interface)
+      * differential testing: generate inputs with a fuzzer or EvoSuite, run
+        against pre and post versions, compare outputs
+  - Composite refactoring score with explicit, published weights:
+      * coupling reduction (CBO)
+      * cohesion improvement (LCOM)
+      * complexity distribution (WMC dispersal across extracted classes)
+      * size reduction (LOC), penalised if it is just deletion
+  - Anti-gaming guards: a class split into empty shells scores well on naive
+    metrics. Require that extracted classes have non-trivial behaviour and that
+    total behaviour is preserved.
+  - Report the metric deltas separately from the composite. Composites hide
+    disagreement between axes.
+
+..............................................................................
+M6. REWARD HACKING AND TAMPER DETECTION                   ~1,100 LOC
+..............................................................................
+Under-served, security-flavoured, and it fits your cybersecurity interest.
+
+  - Immutable test manifest: hash every test file before the episode, verify
+    after. Any mutation is a tamper event.
+  - Held-out test suite the agent never sees, run only at scoring time. Gap
+    between visible pass rate and held-out pass rate is your overfitting signal.
+  - Static detectors on the patch:
+      * assertions deleted or weakened
+      * try/catch blocks that swallow exceptions
+      * @Ignore, @Disabled, assumeTrue added
+      * build config edits that exclude tests
+      * hardcoded returns matching expected test values
+      * timeouts raised, retries added around flaky assertions
+  - Filesystem audit: any write outside the declared workspace
+  - Network audit: sandbox should be network-isolated during the episode;
+    log and fail any attempt
+  - Report a "clean solve rate" alongside raw pass rate. The gap between them
+    is a headline result.
+
+..............................................................................
+M7. COST GOVERNANCE V2                                    ~900 LOC
+..............................................................................
+Extension of what you already have. Small module, disproportionate impact.
+
+  - Hard budget ceilings at run, task and episode level, with graceful abort
+  - Correct prompt-cache accounting (cache write and cache read are priced
+    differently from base input tokens; getting this wrong invalidates cost
+    comparisons)
+  - Batch API support where providers offer discounted asynchronous processing
+  - Cost-normalised scoring: resolve rate per euro, per 1M tokens, per hour
+  - Budget simulator: "given 250 EUR, which configurations can I afford, and
+    what statistical power does that buy me"
+  - Pareto frontier over (quality, cost, latency) with the dominated
+    configurations marked
+
+..............................................................................
+M8. STATISTICS FOR STOCHASTIC AGENTS                      ~1,000 LOC
+..............................................................................
+Your existing engine assumes deterministic paired outcomes. Agents are not that.
+
+  - Unbiased pass@k estimator (the standard combinatorial correction, not the
+    naive "ran it k times and took the max")
+  - Variance decomposition: how much variance comes from task, from model, from
+    seed, from scaffold
+  - Power analysis: given observed variance, how many tasks and repeats are
+    needed to detect a 5 percentage point difference
+  - Clustered bootstrap that respects task grouping
+  - Sequential testing with alpha spending so you can stop a run early when a
+    result is already clear, which directly saves money
+  - Keep Wilcoxon, Friedman, Nemenyi and Cliff's delta for the paired outcome
+    comparisons where they remain valid
+
+..............................................................................
+M9. DASHBOARD V2 AND TRAJECTORY REPLAY                    ~1,800 LOC
+..............................................................................
+  - Trajectory replay viewer: step through an episode, see the diff at each
+    step, the tool call, the cost so far
+  - Side-by-side model comparison on one task
+  - Leaderboard with confidence intervals, not point estimates
+  - Interactive cost/quality Pareto with a budget slider
+  - Failure taxonomy breakdown, drillable to individual episodes
+  - Export unchanged: PDF via WeasyPrint, CSV, JSON
+
+..............................................................................
+M10. CI AND REGRESSION MODE                               ~700 LOC
+..............................................................................
+  - GitHub Action running a fixed smoke subset on every push
+  - Prompt versioning: any change to a template triggers re-evaluation of the
+    subset and reports the delta in the PR
+  - Regression gate: fail the build if resolve rate drops beyond a threshold
+  - Nightly full run with results committed to a results branch
+
+..............................................................................
+TOTAL                                                ~17,300 LOC production
+                                                     plus test code
+..............................................................................
+
+--------------------------------------------------------------------------------
+4.4 WHAT TO CUT IF TIME IS SHORT
+--------------------------------------------------------------------------------
+
+Priority order, highest value first:
+
+  KEEP:  M1 agent harness, M2 tools/MCP, M6 tamper detection, M7 cost
+  KEEP:  M5 structural scoring (this is your differentiator)
+  TRIM:  M3 task factory, reduce to 60 to 80 validated instances instead of 300
+  TRIM:  M4 to the failure taxonomy only, drop the deeper process metrics
+  DROP:  M8 beyond pass@k, M9 beyond a static report, M10 entirely
+
+A cut version lands around 8,000 to 10,000 LOC and still supports the core
+claim. Do not build M9 before M1 is solid. Dashboards are the most tempting and
+least load-bearing part of a benchmark.
+
+
+================================================================================
+PART 5. SEQUENCING AND TIME BUDGET
+================================================================================
+
+Hard constraint you cannot engineer around: you have roughly 47 cr of upcoming
+courses including Integral Calculus, Differential Calculus, Matrix Algebra,
+Statistics II, Functional Programming, Advanced Networks, Foundations of AI and
+ML, and two digitalisation courses. The November hackathon sits inside that.
+
+This is a 3 to 6 month part-time project. It is not a 6 week project. Plan
+accordingly and do not promise v2 to anyone before it exists.
+
+  WEEK 0 (this weekend)
+    Part 1 in full. Repo public. This is what goes in the application to Ari.
+
+  WEEKS 1 to 2
+    Part 2. One MCP server, jvm-sandbox, working end to end with a demo GIF.
+    Optional but high value: expose the god-class detector too.
+
+  WEEKS 3 to 5
+    Part 3. Agent loop with hard budget ceilings, running on your existing 58
+    problems. One published result: agent mode versus single-shot, same tasks,
+    with cost. That comparison alone is a publishable blog post.
+
+  NOVEMBER
+    Hackathon. Do not start M3. Use the hackathon to stress-test M1 and M2 on a
+    real problem with other people's code. Take notes on what broke.
+
+  DECEMBER to MARCH
+    M3, M5, M6 in that order. Task factory is slow and unglamorous, so do it
+    when you have contiguous time, not in fragments between exams.
+
+  MARCH to MAY
+    M4, M7, M8. Then a writeup.
+
+  CHECKPOINT after each phase
+    If the previous phase is not published and working, do not start the next
+    one. Three finished modules beat ten half-finished ones, and a public repo
+    full of stubs is worse than no repo.
+
+
+================================================================================
+PART 6. HOW TO DESCRIBE IT AFTERWARDS
+================================================================================
+
+For Ari, one line in the application:
+
+  "I built an LLM evaluation harness that ran 522 evaluations across Claude
+  Sonnet 4.6, GPT-4o and Gemini 2.5 Flash for a total API spend of $3.52, with
+  per-call cost tracking, response caching and rate limiting. Repo: <link>.
+  Given the token budget constraint, I can instrument the group's spend from
+  day one."
+
+That last sentence is the one that gets you picked as a leader. He raised the
+token budget concern himself. Answer it before he asks.
+
+For a CV bullet, after v2:
+
+  "Extended an LLM evaluation framework from single-shot to agentic
+  repository-level evaluation: built a multi-provider tool-calling harness,
+  mined and validated N Java repository tasks with hermetic JVM environments,
+  and introduced behaviour-preservation and structural-quality scoring plus
+  automatic test-tampering detection. Reported resolve rate per euro alongside
+  raw resolve rate."
+
+No LOC. No file counts. No class counts.
+
+One further note: this project is also the strongest single artifact you could
+put in front of a master's admissions committee, more so than the thesis alone,
+because it is public, reproducible and addresses a documented gap. Treat the
+writeup in Part 5 as a draft research statement.
+
+
+================================================================================
+PART 7. RISKS AND FAILURE MODES
+================================================================================
+
+  1. SCOPE COLLAPSE. The most likely outcome is that you build M1 and M9,
+     because loops and dashboards are fun, and never finish M3, because mining
+     repositories is tedious. Mitigation: build M3 before M9. Force the order.
+
+  2. COST BLOWUP. Agent episodes are 10 to 100 times more expensive than
+     single-shot completions. Multi-step loops on 300 tasks across 3 models can
+     run into hundreds of euros. Mitigation: build M7's hard ceilings in M1,
+     not later. Never run an unbounded loop against a paid API.
+
+  3. FLAKY TASKS POISONING RESULTS. A task that fails 30% of the time for
+     environmental reasons will look like a model capability difference.
+     Mitigation: the 5x validation run in M3 is not optional.
+
+  4. CONTAMINATION. Popular Apache and Spring repositories are almost certainly
+     in every model's training data. Mitigation: record commit dates, stratify
+     results by pre- and post-cutoff, and state the limitation loudly.
+
+  5. SCAFFOLD CONFOUND. If your harness is weak, you will publish conclusions
+     about models that are really conclusions about your loop. Mitigation: the
+     external-harness passthrough in M1. Compare against at least one
+     off-the-shelf agent.
+
+  6. ACADEMIC COLLISION. Someone may publish something similar during your
+     build. Mitigation: publish early and incrementally. A public repo with a
+     dated commit history is your priority claim. A private repo is not.
+
+  7. BURNOUT AGAINST COURSE LOAD. 47 cr plus a hackathon plus this is too much
+     if all three are taken at full intensity. Something gives. Decide in
+     advance which, rather than discovering it in February.
+
+================================================================================
+END
+================================================================================

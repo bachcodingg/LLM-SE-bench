@@ -1,0 +1,92 @@
+{
+  "run_name": "2026-05-run",
+  "artifact_generated_at": "2026-09-18T14:52:05.314150+00:00",
+  "generator": "scripts/build_run_artifact.py",
+  "git_commit": "1702ef931e92f2e33fa219bde0340ec6bf0b3253",
+  "models": [
+    "claude-sonnet-4-6",
+    "gemini-2.5-flash",
+    "gpt-4o"
+  ],
+  "datasets": [
+    "defects4j",
+    "godclass",
+    "humaneval-java",
+    "mbpp-java"
+  ],
+  "counts": {
+    "problems": 58,
+    "evaluations": 522,
+    "runs_per_problem": 3,
+    "api_calls": 672
+  },
+  "wall_clock": {
+    "first_api_call": "2026-05-11T10:24:41.085841",
+    "last_api_call": "2026-05-13T17:04:39.197622",
+    "first_evaluation": "2026-05-13T14:05:35.116158",
+    "last_evaluation": "2026-05-14T10:31:11.908267"
+  },
+  "cost_usd": {
+    "total": 3.5241,
+    "by_model": {
+      "claude-sonnet-4-6": 2.5825,
+      "gemini-2.5-flash": 0.094,
+      "gpt-4o": 0.8476
+    }
+  },
+  "tokens": {
+    "claude-sonnet-4-6": {
+      "prompt": 79689,
+      "completion": 156227
+    },
+    "gemini-2.5-flash": {
+      "prompt": 84034,
+      "completion": 135683
+    },
+    "gpt-4o": {
+      "prompt": 63766,
+      "completion": 68817
+    }
+  },
+  "sampling": {
+    "temperature": 0.0,
+    "seed": null,
+    "note": "Sampling is greedy (temperature 0). No provider in this run exposes a seed parameter, so decoding is not bit-reproducible even at temperature 0. This is why each problem was run 3 times."
+  },
+  "prompt_template_sha256": {
+    "bugfix_basic.j2": "03f9b5074deed09b886047a0b9997bc5ad35edd14780d4491e99fef9e6ec0144",
+    "bugfix_cot.j2": "1787f107ab012f91f1cbdd789f88dd7c761e421d7cd9fcd7387f5d74bb4d63dd",
+    "bugfix_with_test.j2": "d3046a6a2f14d3a773bc751b60f94c884e6acd6fa6dcfe2d793dd5feeb1761c5",
+    "classify_severity.j2": "60f1ed1fa1ac411fd24a8fc61a8b83b69330f7707ee303f0d11bffca26cb9637",
+    "codegen_cot.j2": "7747e49f8365181cbfbfe8b06016f3532fcbb29020885305ecb84e10ded82485",
+    "codegen_few_shot.j2": "ba5023b29d68b8c9190189726f8d93ab1d8872d6c8190dd0776f4ec91ee68af1",
+    "codegen_zero_shot.j2": "8252e0013b783338d609c18d27271abcba03d0c3230ca93eeb0911a76bbc3a4e",
+    "refactor_basic.j2": "9c9b33bc4e0099492964b0789c23d87faba0172557af4f6795af64af0b56ce3b",
+    "refactor_cot.j2": "f5ac8b5ffe00ddaa4cb5c9bb1381b70bebabad68b4d46832f5aef8aeebfeefe9",
+    "refactor_with_metrics.j2": "1b85ad5532dafbbf1ba66b84a1ecdd1cb8981885ba6e09237fc4a33038a6a4fd",
+    "review_quality.j2": "fb6cf679e3f36c21223405bb8ff3a901b469fded196442151ff0176287042905",
+    "review_security.j2": "77ad6afd807797c30ed1ad35154ca5081d3ce359b2b7e8f0cb68780d64cc2c38",
+    "system_default.j2": "e844cc454f74a3d7f610d0c569bf398f07b7cafd31ab3d07e8c71ad8f65cfcd5",
+    "system_expert.j2": "fa184e881c723a52ee25ca7622c789668901654033cb3bccf2f5d2de809b23fd",
+    "system_strict.j2": "b0a56949b7e6a855d3cb169faef81842aa83e096de6fa5949e95c30922787d21"
+  },
+  "dataset_sha256": {
+    "defects4j/bugs.jsonl": "1768a7f50c2b2666d31da640cf180e4089f6ba3599d36a6c02d40d9a02cc325d",
+    "godclass/classes.jsonl": "82c4c6c6c545c2b50b5a1914c7713be02d0e59986b63cb7ace7ca13420272c6f",
+    "humaneval/problems.jsonl": "7bc74b3d765a28f50d65c5f8a8824ebb151ec8637b5c27fc92d75c0f3aee9c94",
+    "mbpp/problems.jsonl": "48dc57f8d405970e9778c6554e4f011990e18cde5ce0a54ad6288ae65111378d"
+  },
+  "dataset_note": "12 of the 58 tasks (3 per dataset) are embedded in bench/datasets/*.py as _EXAMPLE_PROBLEMS and are not covered by the hashes above; they are pinned by git_commit. See data/PROVENANCE.md.",
+  "sandbox": {
+    "image": "llm-se-bench-sandbox:17",
+    "digest": "",
+    "dockerfile_sha256": "d93bdfdb2de272e31632997437698c3a8aa4454d9b92b09b3140050e4b60ee48",
+    "resolved_from": "Dockerfile hash (image not present locally)",
+    "note": "No digest was recorded at run time. The image is built from the hashed Dockerfile, whose base image eclipse-temurin:17-jdk-jammy is a moving tag; a rebuild is not guaranteed bit-identical."
+  },
+  "python_lockfile": {
+    "file": "",
+    "sha256": "",
+    "note": "no lockfile committed"
+  }
+}

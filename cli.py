@@ -25,14 +25,11 @@ from typing import Any
 import click
 
 # Auto-load .env from project root if present
-_env_path = Path(__file__).parent / ".env"
-if _env_path.exists():
-    with open(_env_path) as _fh:
-        for _line in _fh:
-            _line = _line.strip()
-            if _line and "=" in _line and not _line.startswith("#"):
-                _k, _v = _line.split("=", 1)
-                os.environ.setdefault(_k, _v)
+from settings import cache_db_path, load_dotenv  # noqa: E402
+
+load_dotenv()
+
+DEFAULT_DB_PATH = str(cache_db_path())
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
@@ -73,7 +70,7 @@ def gateway_test(model: str | None, config: str | None) -> None:
     from llm_gateway.cost_tracker import CostTracker
 
     cfg = GatewayConfig.from_yaml(config) if config else GatewayConfig()
-    cost_tracker = CostTracker(config=cfg, db_path="llm_cache.db")
+    cost_tracker = CostTracker(config=cfg, db_path=DEFAULT_DB_PATH)
     factory = LLMClientFactory(config=cfg, cost_tracker=cost_tracker)
 
     # If no model specified, test one model per provider
@@ -133,7 +130,7 @@ def gateway_test(model: str | None, config: str | None) -> None:
 
 @gateway_group.command("costs")
 @click.option("--summary", is_flag=True, help="Show a one-line summary per model.")
-@click.option("--db", "db_path", default="llm_cache.db", show_default=True,
+@click.option("--db", "db_path", default=DEFAULT_DB_PATH, show_default=True,
               help="Path to the SQLite cache database.")
 def gateway_costs(summary: bool, db_path: str) -> None:
     """Show cost tracking data from the local cache database."""
@@ -332,8 +329,8 @@ def run_benchmark(
         click.echo("Using MockLLMClient (dry-run mode)")
     else:
         cfg = GatewayConfig()
-        cost_tracker = CostTracker(config=cfg, db_path="llm_cache.db")
-        response_cache = ResponseCache(db_path="llm_cache.db")
+        cost_tracker = CostTracker(config=cfg, db_path=DEFAULT_DB_PATH)
+        response_cache = ResponseCache(db_path=DEFAULT_DB_PATH)
         factory = LLMClientFactory(config=cfg, cost_tracker=cost_tracker, cache=response_cache)
         llm_clients = {}
         for m in resolved_models:
@@ -450,8 +447,10 @@ def quality_cmd(
 @click.option("--output", "-o", "output_dir", default="analysis",
               show_default=True,
               help="Directory for statistical outputs.")
-@click.option("--db", "db_path", default=None, type=click.Path(),
-              help="Path to llm_cache.db for cost data.")
+@click.option("--db", "db_path", default=DEFAULT_DB_PATH, show_default=True,
+              type=click.Path(),
+              help="SQLite file holding cost records. Without it the cost "
+                   "criterion is absent from the analysis.")
 @click.option("--alpha", default=0.05, show_default=True,
               help="Significance level.")
 @click.option("--bootstrap", "n_bootstrap", default=10000, show_default=True,

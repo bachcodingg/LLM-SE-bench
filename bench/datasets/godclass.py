@@ -16,13 +16,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bench.datasets.base import Dataset
 from contracts import (
     Problem,
     TestCase,
     TestSuite,
     VerificationResult,
 )
-from bench.datasets.base import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -545,12 +545,13 @@ class GodClassDataset(Dataset):
         problem_id: str,
         generated_code: str,
     ) -> list[VerificationResult]:
-        problem = self.get_problem(problem_id)
+        # Called for its side effect: raises KeyError on an unknown id, so a
+        # typo fails here rather than silently verifying against no tests.
+        self.get_problem(problem_id)
         suite = self.get_test_suite(problem_id)
         results: list[VerificationResult] = []
 
         class_count = generated_code.count("class ")
-        min_classes = 2
 
         for tc in suite.cases:
             check_type = tc.input_data.get("check", "") if isinstance(tc.input_data, dict) else ""

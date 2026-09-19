@@ -89,6 +89,7 @@ include = [
     "stats*",
     "framework*",
     "mcp_servers*",
+    "agent*",
 ]
 
 [tool.setuptools.package-data]
@@ -103,6 +104,7 @@ testpaths = [
     "stats/tests",
     "framework/tests",
     "mcp_servers/tests",
+    "agent/tests",
     "tests",
 ]
 python_files = ["test_*.py"]
@@ -121,6 +123,7 @@ source = [
     "stats",
     "framework",
     "mcp_servers",
+    "agent",
 ]
 omit = ["*/tests/*", "*/conftest.py"]
 
@@ -131,6 +134,21 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ad-hoc inspection scripts: they manipulate sys.path and load .env before
+# importing the package, so their imports cannot come first.
+"_check_*.py" = ["E402"]
+"_show_*.py" = ["E402"]
+# Availability guards: `try: import dash / except ImportError:` establishes
+# whether an optional dependency is present. The name is unused on purpose.
+"framework/dashboard/pages/*.py" = ["F401"]
+"framework/cli_report.py" = ["F401"]
+"framework/exporters.py" = ["F401"]
+# An unused binding in a test is usually "call this and assert it does not
+# raise", which is a legitimate thing to test.
+"**/tests/**" = ["F841"]
+"tests/**" = ["F841"]
 
 [tool.mypy]
 python_version = "3.10"

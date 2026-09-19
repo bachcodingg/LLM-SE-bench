@@ -38,7 +38,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Sequence
 
 import yaml
 
@@ -52,7 +52,8 @@ try:
         StatisticalSummary,
     )
 except ImportError:  # pragma: no cover – standalone testing
-    from pydantic import BaseModel, Field as PField
+    from pydantic import BaseModel
+    from pydantic import Field as PField
 
     class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
         metric_name: str = ""

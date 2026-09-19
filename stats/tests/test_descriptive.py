@@ -1,10 +1,9 @@
 """Tests for stats/descriptive.py."""
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from stats.descriptive import DescriptiveAnalyzer, DescriptiveStats
+from stats.descriptive import DescriptiveAnalyzer
 
 
 class TestDescriptiveCompute:

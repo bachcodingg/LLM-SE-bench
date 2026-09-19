@@ -9,15 +9,12 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from framework.recommender import (
     ConstraintChecker,
     ConstraintViolation,
     ModelRecommender,
     RationaleGenerator,
 )
-
 
 # =====================================================================
 # ConstraintChecker
@@ -155,8 +152,10 @@ class TestModelRecommender:
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):
                 metric_name: str = ""

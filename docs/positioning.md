@@ -30,7 +30,7 @@ recalled from memory. Recompute with `python scripts/build_run_artifact.py`.
 | Cost spread | $2.58 / $0.85 / $0.09 for identical work | `summary.csv` |
 | Execution | Network-isolated Docker, per-test results | `bench/sandbox/docker_sandbox.py` |
 | Statistics | Friedman / Nemenyi / Wilcoxon-Holm / Cliff's δ / 10k bootstrap | `analysis/statistical_summary.json` |
-| Tests | 606, all passing | `pytest -q` |
+| Tests | 963, all passing | `pytest -q` |
 
 These are output metrics. They are checkable by a reader in under a minute,
 which is what makes them worth stating.
@@ -46,7 +46,7 @@ are the kind a reviewer checks first:
   `framework/tests/test_integration.py` that constructed a
   `StatisticalSummary` without `n`, which the aggregator then skipped. All
   three are fixed and the suite is green. The honest form of the claim is
-  "606 tests, green in CI on every push", with the CI badge as evidence.
+  "963 tests, green in CI on every push", with the CI badge as evidence.
 
 - **"0.012% integration defect rate."** Nothing in this repository measures
   that. Without a written definition of a defect, a denominator, and the

@@ -11,20 +11,16 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from framework.decision_matrix import CRITERIA
 from framework.tradeoffs import (
-    ParetoPoint,
     ParetoResult,
     TradeoffAnalyzer,
     TradeoffPair,
     _dominates,
     compute_2d_frontier,
-    compute_pareto_frontier,
     compute_pairwise_tradeoffs,
+    compute_pareto_frontier,
 )
-
 
 # =====================================================================
 # Dominance

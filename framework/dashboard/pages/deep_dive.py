@@ -12,10 +12,10 @@ from typing import Any
 _DASH_AVAILABLE = True
 try:
     import dash  # type: ignore[import-untyped]
-    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
     import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
-    import plotly.graph_objects as go  # type: ignore[import-untyped]
     import plotly.express as px  # type: ignore[import-untyped]
+    import plotly.graph_objects as go  # type: ignore[import-untyped]
+    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
 except ImportError:
     _DASH_AVAILABLE = False
 
@@ -102,8 +102,10 @@ def register_deep_dive(app: Any) -> None:
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
                 metric_name: str = ""
@@ -177,8 +179,10 @@ def register_deep_dive(app: Any) -> None:
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
                 metric_name: str = ""

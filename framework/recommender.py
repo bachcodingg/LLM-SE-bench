@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Sequence
 
 try:
     from contracts import (
@@ -38,7 +38,8 @@ try:
         StatisticalSummary,
     )
 except ImportError:  # pragma: no cover
-    from pydantic import BaseModel, Field as PField
+    from pydantic import BaseModel
+    from pydantic import Field as PField
 
     class DecisionMatrix(BaseModel):  # type: ignore[no-redef]
         matrix_id: str = ""
@@ -71,9 +72,7 @@ except ImportError:  # pragma: no cover
         ci_upper_95: float = 0.0
 
 from framework.decision_matrix import (
-    CRITERION_METRIC_MAP,
     DecisionMatrixEngine,
-    ModelMetrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -405,11 +404,6 @@ class ModelRecommender:
         recs: list[Recommendation] = []
         for pname in names:
             spec = loader.get(pname)
-            engine = DecisionMatrixEngine(
-                self._summaries,
-                weights=spec.weights,
-                profiles_dir=self._profiles_dir,
-            )
             sub = ModelRecommender(
                 self._summaries,
                 weights=spec.weights,

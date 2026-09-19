@@ -16,10 +16,9 @@ from typing import Any
 
 from contracts import (
     Problem,
-    TestCase,
+    Severity,
     TestSuite,
     VerificationResult,
-    Severity,
 )
 
 logger = logging.getLogger(__name__)

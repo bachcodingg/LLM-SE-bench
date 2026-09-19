@@ -1,4 +1,5 @@
 import json
+
 with open("analysis/statistical_summary.json", encoding="utf-8") as f:
     raw = json.load(f)
 

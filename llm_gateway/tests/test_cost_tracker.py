@@ -4,12 +4,8 @@ Tests for the CostTracker module.
 
 from __future__ import annotations
 
-from datetime import datetime
-
-import pytest
-
 from contracts import LLMResponse
-from llm_gateway.config import GatewayConfig, PricingTier
+from llm_gateway.config import GatewayConfig
 from llm_gateway.cost_tracker import CostTracker
 
 

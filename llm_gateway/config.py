@@ -22,7 +22,6 @@ from typing import Any
 
 import yaml
 
-
 # ── provider-level config ──────────────────────────────────────────────
 
 @dataclass

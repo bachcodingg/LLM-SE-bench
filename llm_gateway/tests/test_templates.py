@@ -7,14 +7,12 @@ few-shot formatting.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from contracts import Prompt
 from llm_gateway.models import PromptRenderer
-
 
 # ── PromptRenderer construction ───────────────────────────────────────
 

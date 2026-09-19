@@ -432,17 +432,16 @@ def run_benchmark(
     run_id = f"run-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
 
     from bench.orchestrator import BenchmarkOrchestrator, MockLLMClient, RunConfig
-    from bench.results import ResultCollector
     from bench.sandbox.docker_sandbox import DockerSandbox
 
     try:
         if dry_run:
             clients: dict[str, Any] = {model: MockLLMClient(latency_ms=0, model_id=model)}
         else:
+            from llm_gateway.cache import ResponseCache
             from llm_gateway.clients.base import LLMClientFactory
             from llm_gateway.config import GatewayConfig
             from llm_gateway.cost_tracker import CostTracker
-            from llm_gateway.cache import ResponseCache
             from settings import cache_db_path
 
             config = GatewayConfig()
@@ -472,15 +471,14 @@ def run_benchmark(
             dry_run=dry_run,
         ),
     )
-    collector = ResultCollector(output_dir)
-
+    # run_single writes to the orchestrator's own ResultCollector, so this
+    # loop must not record again — doing so doubles every row.
     recorded = 0
     failures: list[str] = []
     for task_id in task_ids:
         for run_index in range(1, runs_per_task + 1):
             try:
-                result = orchestrator.run_single(task_id, model, run_index)
-                collector.record(dataset_name, model, result)
+                orchestrator.run_single(task_id, model, run_index)
                 recorded += 1
             except Exception as exc:
                 failures.append(f"{task_id} run {run_index}: {exc}")

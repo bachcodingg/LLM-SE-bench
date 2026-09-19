@@ -11,15 +11,10 @@ Covers:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from framework.decision_matrix import (
-    COST_CRITERIA,
     CRITERIA,
-    DEFAULT_WEIGHTS,
     DecisionMatrixEngine,
     MetricAggregator,
     ModelMetrics,
@@ -27,7 +22,6 @@ from framework.decision_matrix import (
     ProfileLoader,
     ProfileSpec,
 )
-
 
 # =====================================================================
 # ProfileLoader

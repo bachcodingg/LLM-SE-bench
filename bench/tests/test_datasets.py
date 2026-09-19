@@ -13,21 +13,19 @@ Tests cover:
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from contracts import Problem, TestCase, TestSuite, VerificationResult
 from bench.datasets.base import Dataset
+from bench.datasets.defects4j import Defects4JDataset
+from bench.datasets.godclass import GodClassDataset
 from bench.datasets.humaneval import (
     _EXAMPLE_PROBLEMS,
     HumanEvalDataset,
 )
 from bench.datasets.mbpp import MBPPDataset
-from bench.datasets.defects4j import Defects4JDataset
-from bench.datasets.godclass import GodClassDataset
-
+from contracts import Problem, TestCase, TestSuite, VerificationResult
 
 # ======================================================================
 # Fixtures

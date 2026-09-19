@@ -5,10 +5,7 @@ Tests for the JSONL AuditLogger.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
-
-import pytest
 
 from contracts import LLMResponse, Prompt
 from llm_gateway.audit import AuditLogger

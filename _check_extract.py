@@ -1,4 +1,7 @@
-import os, sys, warnings
+import os
+import sys
+import warnings
+
 sys.path.insert(0, ".")
 warnings.filterwarnings("ignore")
 
@@ -17,6 +20,7 @@ ds.load_problems()
 prompt_text = ds.format_prompt("GC_001")
 
 import google.generativeai as genai
+
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel("gemini-2.5-flash")
 cfg = genai.types.GenerationConfig(temperature=0.0, max_output_tokens=4096)

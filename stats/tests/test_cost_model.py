@@ -1,7 +1,5 @@
 """Tests for stats/cost_model.py."""
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from stats.cost_model import CostModel

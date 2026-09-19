@@ -10,11 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 from contracts import LLMResponse
 from llm_gateway.cache import ResponseCache
-
 
 # ── helpers ────────────────────────────────────────────────────────────
 

@@ -105,6 +105,7 @@ combinatorial estimator, not "run it k times and take the max".
 | **C4** | `stats/` | Hypothesis tests, effect sizes, bootstrap CIs, cost modelling, consistency analysis. 23 figures and 8 LaTeX tables. |
 | **C5** | `framework/` | MCDA over five criteria with weighting profiles (`devops`, `audit`, `budget`), Pareto frontier, recommender, Dash dashboard, PDF/CSV/JSON export. |
 | | `mcp_servers/` | Three MCP servers exposing C1–C3 as tools an agent can call. |
+| | `agent/` | The tool-calling agent loop: workspace, five tools, six termination conditions, trajectory recording, replay. |
 
 `contracts.py` holds every shared Pydantic model and is the only thing all
 components import. Details in [`docs/architecture.md`](docs/architecture.md).
@@ -130,10 +131,45 @@ build log destroys an agent's context window, and an agent that failed
 because its stack trace was cut is the harness's bug, not the model's.
 Configuration snippet and full tool reference: [`docs/mcp.md`](docs/mcp.md).
 
+## Agent mode
+
+The harness can also *drive* a model rather than just score one: give it a
+failing task and five tools, and let it work until the tests pass or a
+budget runs out.
+
+```bash
+llm-se-bench agent run --task D4J_Lang_1 --model claude --dry-run
+llm-se-bench agent run --dataset defects4j --model claude \
+  --budget-eur 0.50 --total-budget-eur 5.00 --compare
+llm-se-bench agent show ep-20260919T034026-0aa688
+```
+
+All six termination conditions are enforced — success, max steps, max
+tokens, max cost, no progress, wall clock — and the cost ceiling is checked
+*before* each call, because the call is what spends the money. There is no
+default ceiling and a real run refuses to start without one: agent episodes
+cost 10–100× a single-shot completion.
+
+Success requires two things that are easy to skip: **no regression** against
+a baseline measured before the agent touched anything, and **real
+execution** — the sandbox's structural fallback credits every `@Test` as
+passing, so a machine without Docker would otherwise report a 100% resolve
+rate.
+
+Every episode produces a trajectory: one row per step with the thought, the
+tool call, the result hash, tokens (cache reads counted separately), cost,
+files touched and test state. Recorded episodes can be **re-scored without
+calling any API**, so changing a scoring rule costs a CPU second rather than
+another run's spend.
+
+Provider differences — Anthropic's `tool_use` blocks, OpenAI's JSON-string
+arguments, Gemini's id-less function calls — are normalised once in
+`llm_gateway/adapters/`. Details and known gaps: [`docs/agent.md`](docs/agent.md).
+
 ## Tests
 
 ```bash
-pytest -q          # 606 tests, no network, no API calls, no Docker required
+pytest -q          # 963 tests, no network, no API calls, no Docker required
 ruff check .
 python scripts/security_sweep.py    # before every push to a public remote
 ```

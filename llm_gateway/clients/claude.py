@@ -14,12 +14,13 @@ Usage::
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
 from typing import Any
 
 from contracts import LLMResponse, Prompt
+from llm_gateway.adapters.anthropic import AnthropicAdapter
 from llm_gateway.clients.base import LLMClient, _new_id
+from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class ClaudeClient(LLMClient):
     """
 
     provider_name: str = "claude"
+    adapter = AnthropicAdapter()
 
     def _get_sdk_client(self) -> Any:
         """Lazily construct and return an ``anthropic.Anthropic`` instance.
@@ -107,3 +109,26 @@ class ClaudeClient(LLMClient):
                 "api_model": api_response.model,
             },
         )
+
+    def _call_api_with_tools(
+        self,
+        conversation: Conversation,
+        tools: list[ToolSchema],
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> AssistantTurn:
+        """Send a tool-enabled conversation to the Messages API."""
+        client = self._get_sdk_client()
+        request = self.adapter.encode_request(
+            conversation=conversation,
+            tools=tools,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        logger.debug(
+            "Claude tool call: model=%s messages=%d tools=%d",
+            model_id, len(conversation.messages), len(tools),
+        )
+        return self.adapter.decode_response(client.messages.create(**request), model_id)

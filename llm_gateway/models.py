@@ -37,7 +37,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 # Re-export the three C1 contract types for internal convenience.
 from contracts import CostRecord, LLMResponse, Prompt  # noqa: F401

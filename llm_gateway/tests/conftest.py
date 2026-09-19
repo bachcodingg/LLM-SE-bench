@@ -7,7 +7,6 @@ so that individual test modules can focus on behaviour rather than boilerplate.
 
 from __future__ import annotations
 
-import tempfile
 from datetime import datetime
 from pathlib import Path
 

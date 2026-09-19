@@ -40,7 +40,7 @@ from typing import IO, Any, Sequence
 
 from framework.decision_matrix import CRITERIA, DecisionMatrixEngine
 from framework.recommender import ModelRecommender
-from framework.tradeoffs import ParetoResult, TradeoffAnalyzer
+from framework.tradeoffs import TradeoffAnalyzer
 
 try:
     from contracts import DecisionMatrix, Recommendation, StatisticalSummary

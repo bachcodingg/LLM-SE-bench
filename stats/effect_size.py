@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Sequence
 
 import numpy as np
 import pandas as pd

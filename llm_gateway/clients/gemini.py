@@ -18,7 +18,9 @@ from datetime import datetime
 from typing import Any
 
 from contracts import LLMResponse, Prompt
+from llm_gateway.adapters.gemini import GeminiAdapter
 from llm_gateway.clients.base import LLMClient, _new_id
+from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class GeminiClient(LLMClient):
     """
 
     provider_name: str = "gemini"
+    adapter = GeminiAdapter()
 
     def _get_sdk_client(self) -> Any:
         """Lazily configure the SDK and return a ``GenerativeModel``.
@@ -131,3 +134,47 @@ class GeminiClient(LLMClient):
                 "api_model": model_name,
             },
         )
+
+    def _call_api_with_tools(
+        self,
+        conversation: Conversation,
+        tools: list[ToolSchema],
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> AssistantTurn:
+        """Send a tool-enabled conversation to ``generate_content``.
+
+        Gemini takes the system prompt and the tool declarations on the
+        ``GenerativeModel`` rather than on the call, so the encoded request
+        is unpacked across the two here.
+        """
+        import google.generativeai as genai
+
+        self._get_sdk_client()  # configures the API key globally
+
+        request = self.adapter.encode_request(
+            conversation=conversation,
+            tools=tools,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+        model = genai.GenerativeModel(
+            model_id,
+            system_instruction=request.get("system_instruction") or None,
+            tools=request.get("tools") or None,
+        )
+        logger.debug(
+            "Gemini tool call: model=%s contents=%d tools=%d",
+            model_id, len(request["contents"]), len(tools),
+        )
+        api_response = model.generate_content(
+            request["contents"],
+            generation_config=genai.types.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        return self.adapter.decode_response(api_response, model_id)

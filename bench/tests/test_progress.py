@@ -5,11 +5,11 @@ tests.test_progress — Unit tests for ProgressTracker and CheckpointManager.
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
-from bench.progress import ProgressTracker, CheckpointManager
+import pytest
 
+from bench.progress import CheckpointManager, ProgressTracker
 
 # ======================================================================
 # ProgressTracker Tests

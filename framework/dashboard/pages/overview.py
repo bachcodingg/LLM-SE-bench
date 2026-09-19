@@ -12,9 +12,9 @@ from typing import Any
 _DASH_AVAILABLE = True
 try:
     import dash  # type: ignore[import-untyped]
-    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
     import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
     import plotly.graph_objects as go  # type: ignore[import-untyped]
+    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
 except ImportError:
     _DASH_AVAILABLE = False
 
@@ -92,14 +92,15 @@ def register_overview(app: Any) -> None:
         from framework.decision_matrix import (
             CRITERIA,
             DecisionMatrixEngine,
-            DEFAULT_WEIGHTS,
         )
 
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
                 metric_name: str = ""
@@ -127,7 +128,6 @@ def register_overview(app: Any) -> None:
                 engine = DecisionMatrixEngine(summaries)
 
         matrices = engine.build()
-        normalised = engine.normalised_scores
 
         # ── Radar chart ───────────────────────────────────────────────
         categories = [c.title() for c in CRITERIA] + [CRITERIA[0].title()]

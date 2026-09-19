@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -44,8 +43,10 @@ def _load_summaries(path: str | Path) -> list[Any]:
     try:
         from contracts import StatisticalSummary
     except ImportError:
-        from pydantic import BaseModel, Field as PField
         from datetime import datetime
+
+        from pydantic import BaseModel
+        from pydantic import Field as PField
 
         class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
             metric_name: str = ""
@@ -81,8 +82,8 @@ def create_app(
     """
     try:
         import dash  # type: ignore[import-untyped]
-        from dash import Dash, dcc, html  # type: ignore[import-untyped]
         import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
+        from dash import Dash, dcc, html  # type: ignore[import-untyped]
     except ImportError as exc:
         logger.error("Dash is required for the dashboard: %s", exc)
         raise SystemExit(
@@ -132,10 +133,10 @@ def create_app(
     )
 
     # ── Page routing ──────────────────────────────────────────────────
-    from framework.dashboard.pages.overview import register_overview
-    from framework.dashboard.pages.deep_dive import register_deep_dive
-    from framework.dashboard.pages.decision_tool import register_decision_tool
     from framework.dashboard.pages.cost_calculator import register_cost_calculator
+    from framework.dashboard.pages.decision_tool import register_decision_tool
+    from framework.dashboard.pages.deep_dive import register_deep_dive
+    from framework.dashboard.pages.overview import register_overview
 
     register_overview(app)
     register_deep_dive(app)
@@ -147,10 +148,10 @@ def create_app(
         [dash.Input("url", "pathname")],
     )
     def display_page(pathname: str) -> Any:
-        from framework.dashboard.pages.overview import overview_layout
-        from framework.dashboard.pages.deep_dive import deep_dive_layout
-        from framework.dashboard.pages.decision_tool import decision_tool_layout
         from framework.dashboard.pages.cost_calculator import cost_calculator_layout
+        from framework.dashboard.pages.decision_tool import decision_tool_layout
+        from framework.dashboard.pages.deep_dive import deep_dive_layout
+        from framework.dashboard.pages.overview import overview_layout
 
         if pathname == "/deep-dive":
             return deep_dive_layout()

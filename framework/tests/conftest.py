@@ -18,7 +18,6 @@ Values are chosen so that models have clear trade-offs:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,7 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 try:
     from contracts import StatisticalSummary
 except ImportError:
-    from pydantic import BaseModel, Field as PField
+    from pydantic import BaseModel
+    from pydantic import Field as PField
 
     class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
         metric_name: str = ""

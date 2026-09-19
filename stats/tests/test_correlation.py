@@ -1,7 +1,6 @@
 """Tests for stats/correlation.py."""
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from stats.correlation import CorrelationAnalyzer

@@ -14,17 +14,13 @@ from __future__ import annotations
 import csv
 import json
 from io import StringIO
-from pathlib import Path
 
-import pytest
-
-from framework.decision_matrix import CRITERIA, DecisionMatrixEngine
+from framework.decision_matrix import DecisionMatrixEngine
 from framework.exporters import (
     CSVExporter,
     JSONExporter,
     MultiProfileExporter,
 )
-
 
 # =====================================================================
 # JSONExporter

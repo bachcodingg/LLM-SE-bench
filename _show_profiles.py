@@ -1,9 +1,12 @@
-import json, sys, warnings
+import json
+import sys
+import warnings
+
 warnings.filterwarnings("ignore")
 sys.path.insert(0, ".")
 
-from framework.decision_matrix import DecisionMatrixEngine
 from contracts import StatisticalSummary
+from framework.decision_matrix import DecisionMatrixEngine
 
 with open("analysis/statistical_summary.json", encoding="utf-8") as f:
     raw = json.load(f)

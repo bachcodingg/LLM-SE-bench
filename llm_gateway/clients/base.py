@@ -14,8 +14,7 @@ import logging
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from contracts import CostRecord, LLMResponse, Prompt
 from llm_gateway.models import PromptRenderer
@@ -24,6 +23,7 @@ if TYPE_CHECKING:
     from llm_gateway.audit import AuditLogger
     from llm_gateway.cache import ResponseCache
     from llm_gateway.config import GatewayConfig
+    from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
     from llm_gateway.cost_tracker import CostTracker
     from llm_gateway.rate_limiter import RateLimiter
 
@@ -183,6 +183,129 @@ class LLMClient(ABC):
             self.cache.put(prompt_hash, prompt.model_id, response)
 
         return response
+
+    # ── multi-turn, tool-calling entry point ───────────────────────────
+
+    def _call_api_with_tools(
+        self,
+        conversation: Conversation,
+        tools: list[ToolSchema],
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> AssistantTurn:
+        """Perform one tool-calling API call.
+
+        Subclasses that support tool use override this.  The default
+        raises, so a provider without an implementation fails loudly at the
+        first agent step rather than silently degrading to text-only
+        completion — which would look like a very stupid model.
+
+        Raises:
+            NotImplementedError: Always, in the base class.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement tool calling; "
+            f"it can only be used for single-shot evaluation."
+        )
+
+    def send_conversation(
+        self,
+        conversation: Conversation,
+        tools: list[ToolSchema],
+        model_id: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+    ) -> AssistantTurn:
+        """Send a multi-turn, tool-enabled conversation.
+
+        The single-shot sibling of this method is ``send_prompt``.  The
+        cross-cutting plumbing is the same except for one deliberate
+        omission: **responses are not cached.**  A cache key covering a whole
+        conversation almost never hits, and a key covering less than the whole
+        conversation would return an answer to a different question. Prompt
+        caching — the provider-side kind that actually pays off here — is
+        reported through ``AssistantTurn.usage.cache_read_tokens``.
+
+        Args:
+            conversation: The conversation so far, system prompt included.
+            tools:        Tools to offer. May be empty.
+            model_id:     Model to call.
+            max_tokens:   Output-token ceiling for this call.
+            temperature:  Sampling temperature.
+
+        Returns:
+            A neutral ``AssistantTurn``, whatever the provider.
+        """
+        if self.rate_limiter:
+            self.rate_limiter.acquire(self.provider_name)
+
+        t0 = time.perf_counter()
+        turn = self._call_api_with_tools(
+            conversation=conversation,
+            tools=tools,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        turn.latency_ms = (time.perf_counter() - t0) * 1000.0
+
+        cost_record = self._record_turn_cost(turn, model_id)
+
+        if self.audit_logger:
+            # Audit wants the contract types, so the turn is projected onto
+            # them. The projection is lossy — tool calls do not survive it —
+            # and the trajectory table is what preserves the detail.
+            self.audit_logger.log_event(
+                event_type="agent_turn",
+                prompt=Prompt(
+                    prompt_id=_new_id("pmt"),
+                    problem_id="agent",
+                    model_id=model_id,
+                    system_message=conversation.system,
+                    user_message=f"<{len(conversation.messages)} messages>",
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+                response=self._turn_as_response(turn, model_id),
+                prompt_hash="",
+                cost_usd=cost_record.total_cost_usd if cost_record else 0.0,
+            )
+
+        return turn
+
+    def _record_turn_cost(self, turn: AssistantTurn, model_id: str) -> CostRecord | None:
+        """Write a CostRecord for *turn*, if a tracker is attached.
+
+        Cache reads are charged at the input rate here, which **understates**
+        the saving: every provider discounts cached input, most heavily.
+        Correct per-tier cache pricing needs a price table this project does
+        not yet have, so the figure is deliberately conservative — an agent
+        run will not look cheaper than it was.
+        """
+        if not self.cost_tracker:
+            return None
+        return self.cost_tracker.record_cost(self._turn_as_response(turn, model_id))
+
+    @staticmethod
+    def _turn_as_response(turn: AssistantTurn, model_id: str) -> LLMResponse:
+        """Project an AssistantTurn onto the LLMResponse contract."""
+        return LLMResponse(
+            response_id=_new_id("resp"),
+            prompt_id=_new_id("pmt"),
+            model_id=model_id,
+            raw_text=turn.text,
+            finish_reason=turn.stop_reason,
+            prompt_tokens=turn.usage.input_tokens + turn.usage.cache_read_tokens,
+            completion_tokens=turn.usage.output_tokens,
+            latency_ms=turn.latency_ms,
+            metadata={
+                "agent_turn": True,
+                "tool_calls": [call.name for call in turn.tool_calls],
+                "cache_read_tokens": turn.usage.cache_read_tokens,
+                "cache_write_tokens": turn.usage.cache_write_tokens,
+            },
+        )
 
 
 class LLMClientFactory:

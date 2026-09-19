@@ -7,7 +7,6 @@ All provider SDK calls are mocked — no real API requests are made.
 from __future__ import annotations
 
 import types
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,14 +14,13 @@ import pytest
 from contracts import LLMResponse, Prompt
 from llm_gateway.audit import AuditLogger
 from llm_gateway.cache import ResponseCache
-from llm_gateway.clients.base import LLMClient, LLMClientFactory, _new_id
+from llm_gateway.clients.base import LLMClientFactory, _new_id
 from llm_gateway.clients.claude import ClaudeClient
 from llm_gateway.clients.gemini import GeminiClient
 from llm_gateway.clients.gpt4 import GPT4Client
-from llm_gateway.config import GatewayConfig, ProviderConfig
+from llm_gateway.config import GatewayConfig
 from llm_gateway.cost_tracker import CostTracker
 from llm_gateway.rate_limiter import RateLimiter
-
 
 # ── helpers ────────────────────────────────────────────────────────────
 

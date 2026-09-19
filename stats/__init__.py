@@ -18,21 +18,21 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-from stats.descriptive import DescriptiveAnalyzer
-from stats.hypothesis import HypothesisEngine
-from stats.effect_size import EffectSizeCalculator
-from stats.confidence import BootstrapCI
-from stats.cost_model import CostModel
-from stats.consistency import ConsistencyAnalyzer
-from stats.correlation import CorrelationAnalyzer
-from stats.visualisation import VisualisationEngine
-from stats.report_data import ReportDataGenerator
 from stats._loader import (
+    load_cost_data,
     load_evaluation_results,
     load_quality_metrics,
-    load_cost_data,
 )
 from stats._pipeline import run_full_analysis
+from stats.confidence import BootstrapCI
+from stats.consistency import ConsistencyAnalyzer
+from stats.correlation import CorrelationAnalyzer
+from stats.cost_model import CostModel
+from stats.descriptive import DescriptiveAnalyzer
+from stats.effect_size import EffectSizeCalculator
+from stats.hypothesis import HypothesisEngine
+from stats.report_data import ReportDataGenerator
+from stats.visualisation import VisualisationEngine
 
 __all__ = [
     "DescriptiveAnalyzer",

@@ -39,12 +39,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import seaborn as sns

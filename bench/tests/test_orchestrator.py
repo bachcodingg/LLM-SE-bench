@@ -7,27 +7,27 @@ Uses MockLLMClient and dry-run DockerSandbox so no external services are needed.
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 
+import pytest
+
+from bench.datasets.defects4j import Defects4JDataset
+from bench.datasets.godclass import GodClassDataset
+from bench.datasets.humaneval import HumanEvalDataset
+from bench.datasets.mbpp import MBPPDataset
+from bench.orchestrator import (
+    BenchmarkOrchestrator,
+    MockLLMClient,
+    RunConfig,
+)
+from bench.progress import ProgressTracker
+from bench.sandbox.docker_sandbox import DockerSandbox
 from contracts import (
     EvaluationResult,
     LLMResponse,
     Prompt,
     Verdict,
 )
-from bench.datasets.humaneval import HumanEvalDataset
-from bench.datasets.mbpp import MBPPDataset
-from bench.datasets.defects4j import Defects4JDataset
-from bench.datasets.godclass import GodClassDataset
-from bench.orchestrator import (
-    BenchmarkOrchestrator,
-    MockLLMClient,
-    RunConfig,
-)
-from bench.sandbox.docker_sandbox import DockerSandbox
-from bench.progress import ProgressTracker
-
 
 # ======================================================================
 # Fixtures

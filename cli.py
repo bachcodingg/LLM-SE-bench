@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -63,10 +62,9 @@ def gateway_group() -> None:
               help="Path to gateway YAML config file.")
 def gateway_test(model: str | None, config: str | None) -> None:
     """Send a trivial prompt to verify gateway connectivity."""
-    from llm_gateway.config import GatewayConfig
-    from llm_gateway.clients.base import LLMClientFactory
     from contracts import Prompt
-
+    from llm_gateway.clients.base import LLMClientFactory
+    from llm_gateway.config import GatewayConfig
     from llm_gateway.cost_tracker import CostTracker
 
     cfg = GatewayConfig.from_yaml(config) if config else GatewayConfig()
@@ -213,10 +211,10 @@ def datasets_group() -> None:
               help="Root directory containing dataset files.")
 def datasets_validate(dataset: str, data_dir: str) -> None:
     """Validate dataset files for completeness and schema compliance."""
-    from bench.datasets.humaneval import HumanEvalDataset
-    from bench.datasets.mbpp import MBPPDataset
     from bench.datasets.defects4j import Defects4JDataset
     from bench.datasets.godclass import GodClassDataset
+    from bench.datasets.humaneval import HumanEvalDataset
+    from bench.datasets.mbpp import MBPPDataset
 
     datasets_map = {
         "humaneval": HumanEvalDataset,
@@ -294,17 +292,16 @@ def run_benchmark(
     max_tokens: int,
 ) -> None:
     """Run the benchmark evaluation pipeline."""
-    from bench.orchestrator import BenchmarkOrchestrator, MockLLMClient, RunConfig
-    from bench.sandbox.docker_sandbox import DockerSandbox
-    from bench.results import ResultCollector
-    from bench.datasets.humaneval import HumanEvalDataset
-    from bench.datasets.mbpp import MBPPDataset
     from bench.datasets.defects4j import Defects4JDataset
     from bench.datasets.godclass import GodClassDataset
-    from llm_gateway.config import GatewayConfig
-    from llm_gateway.clients.base import LLMClientFactory
-    from llm_gateway.cost_tracker import CostTracker
+    from bench.datasets.humaneval import HumanEvalDataset
+    from bench.datasets.mbpp import MBPPDataset
+    from bench.orchestrator import BenchmarkOrchestrator, MockLLMClient, RunConfig
+    from bench.sandbox.docker_sandbox import DockerSandbox
     from llm_gateway.cache import ResponseCache
+    from llm_gateway.clients.base import LLMClientFactory
+    from llm_gateway.config import GatewayConfig
+    from llm_gateway.cost_tracker import CostTracker
 
     resolved_models = [_resolve_model(m) for m in models]
 
@@ -365,13 +362,13 @@ def run_benchmark(
         click.echo(f"Running {len(all_ids)} problem(s): {', '.join(all_ids)}")
         click.echo()
         stats: dict[str, Any] = {"total_evaluations": 0, "successful": 0, "failed": 0, "skipped": 0}
-        collector = ResultCollector(output_dir)
+        # run_single already writes through the orchestrator's own
+        # ResultCollector; recording again here wrote every row twice.
         for model_id in resolved_models:
             for problem_id in all_ids:
                 for run_id in range(1, runs + 1):
                     try:
                         result = orchestrator.run_single(problem_id, model_id, run_id)
-                        collector.record(dataset, model_id, result)
                         verdict_str = result.verdict.value if hasattr(result.verdict, "value") else str(result.verdict)
                         score_str = f"{result.weighted_score:.2f}"
                         click.echo(
@@ -518,10 +515,11 @@ def report_cmd(
 ) -> None:
     """Generate a decision report from statistical summary data."""
     import json as _json
-    from framework.decision_matrix import DecisionMatrixEngine
-    from framework.recommender import ModelRecommender
-    from framework.exporters import JSONExporter, CSVExporter
+
     from framework.cli_report import CLIReporter
+    from framework.decision_matrix import DecisionMatrixEngine
+    from framework.exporters import CSVExporter, JSONExporter
+    from framework.recommender import ModelRecommender
 
     # Accept either a directory (auto-find statistical_summary.json) or a file
     _data_p = Path(data_path)
@@ -596,6 +594,240 @@ def report_cmd(
             reporter = PDFReporter(summaries=summaries, profile_name=profile)
             result_path = reporter.export(out)
             click.secho(f"HTML report written to {result_path}", fg="green")
+
+
+# ── agent ─────────────────────────────────────────────────────────────
+
+@main.group("agent")
+def agent_group() -> None:
+    """Agent-mode evaluation: tool-calling loops instead of single completions."""
+
+
+@agent_group.command("run")
+@click.option("--task", "-t", "task_ids", multiple=True,
+              help="Task id to attempt (repeat for several). Omit with --dataset.")
+@click.option("--dataset", "-d", default=None,
+              help="Run every task in this dataset instead of naming them.")
+@click.option("--model", "-m", required=True,
+              help="Model to run. Aliases: claude, gpt4, gemini.")
+@click.option("--budget-eur", "-b", type=float, default=None,
+              help="Hard cost ceiling per episode, in EUR. Required for a real "
+                   "run; falls back to LLM_SE_BENCH_BUDGET_EUR.")
+@click.option("--total-budget-eur", type=float, default=None,
+              help="Ceiling for the whole run. Without it, N tasks can cost N "
+                   "times the per-episode ceiling.")
+@click.option("--max-steps", default=30, show_default=True,
+              help="Tool calls per episode before the episode is stopped.")
+@click.option("--max-tokens", default=500_000, show_default=True,
+              help="Token ceiling per episode.")
+@click.option("--no-progress-steps", default=5, show_default=True,
+              help="Consecutive steps with no file change and no test delta "
+                   "before the episode is stopped.")
+@click.option("--wall-clock", default=900.0, show_default=True,
+              help="Seconds before an episode is stopped.")
+@click.option("--limit", "-l", default=None, type=int,
+              help="Attempt only the first N tasks of --dataset.")
+@click.option("--scaffold", default="react", show_default=True,
+              type=click.Choice(["react", "single-shot-baseline"]),
+              help="Which agent scaffold to run. Recorded on the trajectory so "
+                   "'the model is better' can be separated from 'my loop is better'.")
+@click.option("--dry-run", is_flag=True,
+              help="Mock the model and skip Docker. Makes no API call and "
+                   "costs nothing; the results are not benchmark scores.")
+@click.option("--output-dir", "-o", default="results/trajectories", show_default=True,
+              help="Where trajectories are written.")
+@click.option("--compare", is_flag=True,
+              help="After the run, print agent versus single-shot on the same "
+                   "tasks, with cost.")
+def agent_run(
+    task_ids: tuple[str, ...],
+    dataset: str | None,
+    model: str,
+    budget_eur: float | None,
+    total_budget_eur: float | None,
+    max_steps: int,
+    max_tokens: int,
+    no_progress_steps: int,
+    wall_clock: float,
+    limit: int | None,
+    scaffold: str,
+    dry_run: bool,
+    output_dir: str,
+    compare: bool,
+) -> None:
+    """Run the agent loop against one or more tasks."""
+    from agent.runner import compare_to_single_shot, run_episodes
+    from agent.termination import TerminationPolicy
+    from agent.trajectory import TrajectoryStore
+    from mcp_servers.registry import get_registry
+    from settings import budget_ceiling_eur
+
+    resolved_model = _resolve_model(model)
+
+    # Resolve which tasks to attempt.
+    if task_ids and dataset:
+        click.secho("Use --task or --dataset, not both.", fg="red", err=True)
+        sys.exit(1)
+    if dataset:
+        registry = get_registry("data")
+        adapters = registry.adapters()
+        if dataset not in adapters:
+            click.secho(
+                f"Unknown dataset {dataset!r}; expected one of {sorted(adapters)}.",
+                fg="red", err=True,
+            )
+            sys.exit(1)
+        selected = adapters[dataset].list_problem_ids()
+    elif task_ids:
+        selected = list(task_ids)
+    else:
+        click.secho("Supply --task or --dataset.", fg="red", err=True)
+        sys.exit(1)
+    if limit is not None:
+        selected = selected[:limit]
+
+    # The cost ceiling is not optional for a real run. There is no safe
+    # default to assume on someone else's account.
+    ceiling = budget_eur if budget_eur else budget_ceiling_eur()
+    if not dry_run and not ceiling:
+        click.secho(
+            "A real agent run needs a cost ceiling. Pass --budget-eur, or set "
+            "LLM_SE_BENCH_BUDGET_EUR. Agent episodes cost 10-100x a single-shot "
+            "completion; never point an unbounded loop at a paid API.",
+            fg="red", err=True,
+        )
+        sys.exit(1)
+
+    policy = TerminationPolicy(
+        max_cost_eur=ceiling or 1.0,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        no_progress_steps=no_progress_steps,
+        wall_clock_seconds=wall_clock,
+    )
+
+    if dry_run:
+        from agent.stub import StubAgentClient
+
+        client: Any = StubAgentClient()
+        click.echo(
+            "Dry-run: scripted model, no API calls, no Docker. The stub "
+            "explores and stops; it does not attempt a fix, so every episode "
+            "ends unsolved by design."
+        )
+    else:
+        from llm_gateway.cache import ResponseCache
+        from llm_gateway.clients.base import LLMClientFactory
+        from llm_gateway.config import GatewayConfig
+        from llm_gateway.cost_tracker import CostTracker
+
+        cfg = GatewayConfig()
+        factory = LLMClientFactory(
+            config=cfg,
+            cost_tracker=CostTracker(config=cfg, db_path=DEFAULT_DB_PATH),
+            cache=ResponseCache(db_path=DEFAULT_DB_PATH),
+        )
+        try:
+            client = factory.get_client(resolved_model)
+        except Exception as exc:
+            click.secho(f"Cannot create a client for {resolved_model}: {exc}",
+                        fg="red", err=True)
+            sys.exit(1)
+
+    click.echo(f"Model:          {resolved_model}")
+    click.echo(f"Tasks:          {len(selected)}")
+    click.echo(f"Scaffold:       {scaffold}")
+    click.echo(f"Budget/episode: EUR {policy.max_cost_eur:.2f}")
+    if total_budget_eur:
+        click.echo(f"Budget/run:     EUR {total_budget_eur:.2f}")
+    click.echo()
+
+    store = TrajectoryStore(output_dir)
+    trajectories = run_episodes(
+        task_ids=selected,
+        model_id=resolved_model,
+        client=client,
+        policy=policy,
+        scaffold=scaffold,
+        store=store,
+        dry_run=dry_run,
+        total_budget_eur=total_budget_eur,
+    )
+
+    if not trajectories:
+        click.secho("No episodes ran.", fg="yellow")
+        return
+
+    solved = sum(1 for t in trajectories if t.solved)
+    spent = sum(t.total_cost_eur for t in trajectories)
+    unexecuted = sum(1 for t in trajectories if not t.tests_executed)
+    for trajectory in trajectories:
+        mark = "PASS" if trajectory.solved else "fail"
+        click.echo(
+            f"  [{mark}] {trajectory.task_id:16s} "
+            f"{trajectory.num_steps:2d} steps  "
+            f"EUR {trajectory.total_cost_eur:.4f}  "
+            f"{trajectory.stop_condition}"
+        )
+
+    click.echo()
+    click.secho(
+        f"{solved}/{len(trajectories)} solved, EUR {spent:.4f} total. "
+        f"Trajectories in {output_dir}/",
+        fg="green" if solved else "yellow",
+    )
+    if unexecuted:
+        click.secho(
+            f"{unexecuted} episode(s) never executed their tests — the sandbox "
+            f"fell back to a structural check. Those results are not benchmark "
+            f"scores and no episode among them can be solved. Start Docker and "
+            f"build the sandbox image to get real ones.",
+            fg="yellow",
+        )
+
+    if compare:
+        click.echo()
+        click.echo(json.dumps(compare_to_single_shot(trajectories), indent=2))
+
+
+@agent_group.command("show")
+@click.argument("episode_id")
+@click.option("--store", "store_dir", default="results/trajectories",
+              show_default=True, help="Trajectory directory.")
+@click.option("--steps/--no-steps", default=True, show_default=True,
+              help="Print the step-by-step trace.")
+def agent_show(episode_id: str, store_dir: str, steps: bool) -> None:
+    """Print a recorded episode: its outcome, and every step."""
+    from agent.trajectory import TrajectoryStore
+
+    store = TrajectoryStore(store_dir)
+    trajectory = store.load(episode_id)
+    if trajectory is None:
+        known = store.episode_ids()[-5:]
+        click.secho(f"No episode {episode_id!r}.", fg="red", err=True)
+        if known:
+            click.echo(f"Recent episodes: {', '.join(known)}")
+        sys.exit(1)
+
+    click.echo(json.dumps(trajectory.summary(), indent=2))
+    if not steps:
+        return
+
+    click.echo("\nSteps")
+    click.echo("=" * 60)
+    for step in trajectory.steps:
+        click.echo(f"\n[{step.step_index}] {step.tool_name or '(no tool call)'}")
+        if step.thought_text:
+            click.echo(f"  thought: {step.thought_text[:300]}")
+        if step.tool_args:
+            click.echo(f"  args:    {json.dumps(step.tool_args, default=str)[:200]}")
+        if step.result_preview:
+            marker = " [error]" if step.tool_error else ""
+            click.echo(f"  result{marker}: {step.result_preview[:300]}")
+        if step.files_touched:
+            click.echo(f"  touched: {', '.join(step.files_touched)}")
+        if step.tests_passing_after is not None:
+            click.echo(f"  tests:   {step.tests_passing_after}/{step.tests_total_after}")
 
 
 # ── dashboard ─────────────────────────────────────────────────────────

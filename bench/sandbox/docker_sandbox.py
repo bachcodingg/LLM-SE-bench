@@ -18,8 +18,6 @@ operate in ``dry_run`` mode, which performs structural checks only.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import shutil
 import subprocess
@@ -449,8 +447,8 @@ class DockerSandbox:
         cmd = [
             "docker", "run", "--rm",
             "--network=none",
-            f"--memory=256m",
-            f"--cpus=1",
+            "--memory=256m",
+            "--cpus=1",
             "-v", f"{staging_dir}:/workspace:rw",
             self.docker_image,
             "bash", "-c",
@@ -544,8 +542,8 @@ class DockerSandbox:
         cmd = [
             "docker", "run", "--rm",
             "--network=none",
-            f"--memory=256m",
-            f"--cpus=1",
+            "--memory=256m",
+            "--cpus=1",
             "-v", f"{staging_dir}:/workspace:rw",
             self.docker_image,
             "bash", "-c",

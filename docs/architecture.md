@@ -116,6 +116,36 @@ optimising for. Outputs a Plotly Dash dashboard and PDF/CSV/JSON exports.
 Three MCP servers expose C1–C3 as tools an agent can call. See
 [`mcp.md`](mcp.md).
 
+## Agent loop (`agent/`)
+
+Turns the harness from something that scores a model into something that
+drives one: a task, five tools, and a loop that runs until the tests pass or
+a budget is exhausted.
+
+```
+   agent/loop.py ──── neutral types ────> llm_gateway/adapters/
+        │            (conversation.py)     anthropic | openai | gemini
+        │                                          │
+   agent/tools.py                          llm_gateway/clients/
+   read_file, list_dir, grep,              (rate limiting, cost records)
+   apply_patch, run_tests
+        │
+   agent/workspace.py ──materialise──> bench/sandbox (C2)
+   in-memory {path: content}
+        │
+   agent/trajectory.py
+   one row per step; replay without an API call
+```
+
+`llm_gateway/conversation.py` is the second seam in the project, after
+`contracts.py`: the loop speaks only its neutral `Conversation`,
+`ToolCall`, `ToolResult` and `AssistantTurn`, so nothing in `agent/` knows
+which provider it is talking to. The three adapters translate once each,
+and are pure functions over stub objects — no network, no SDK, no state —
+which is what lets them be tested without an API key.
+
+Details, and the gaps that are still open, in [`agent.md`](agent.md).
+
 ## A note on repository layout
 
 The guide this repository follows recommends a `src/llm_se_bench/` layout.

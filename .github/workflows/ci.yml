@@ -78,3 +78,9 @@ jobs:
           test -s /tmp/smoke-results/humaneval-java/claude-sonnet-4-6/results.jsonl
       - name: Start each MCP server and confirm it registers its tools
         run: python -m mcp_servers --self-test
+      - name: Run an agent episode end to end, spending nothing
+        run: |
+          llm-se-bench agent run --dataset defects4j --limit 2 --model claude \
+            --dry-run --output-dir /tmp/smoke-trajectories
+      - name: Confirm the episode was recorded
+        run: test -s /tmp/smoke-trajectories/index.jsonl

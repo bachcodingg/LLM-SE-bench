@@ -6,11 +6,11 @@ These tests use dry-run mode so they don't require Docker.
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
-from bench.sandbox.docker_sandbox import DockerSandbox, SandboxResult
+import pytest
 
+from bench.sandbox.docker_sandbox import DockerSandbox, SandboxResult
 
 # ======================================================================
 # Fixtures

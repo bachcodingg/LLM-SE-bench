@@ -13,7 +13,6 @@ each model in the synthetic dataset.
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +26,6 @@ from contracts import (
     StatisticalSummary,
     Verdict,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -185,7 +183,7 @@ class TestC3QualityMetrics:
     """Verify quality metric models can be constructed and serialised."""
 
     def test_quality_metrics_construction(self) -> None:
-        from contracts import QualityMetrics, CKMetrics
+        from contracts import CKMetrics, QualityMetrics
 
         ck = CKMetrics(
             metrics_id="ck-001",
@@ -259,6 +257,7 @@ class TestC4StatisticalSummaries:
     def test_descriptive_analyzer(self) -> None:
         """DescriptiveAnalyzer can summarise evaluation results."""
         import pandas as pd
+
         from stats.descriptive import DescriptiveAnalyzer
 
         rows = []
@@ -323,7 +322,7 @@ class TestC5DecisionMatrix:
     def test_matrices_have_scores_for_all_criteria(
         self, summaries: list[StatisticalSummary]
     ) -> None:
-        from framework.decision_matrix import DecisionMatrixEngine, CRITERIA
+        from framework.decision_matrix import CRITERIA, DecisionMatrixEngine
 
         engine = DecisionMatrixEngine(summaries, profile_name="devops")
         matrices = engine.build()
@@ -350,8 +349,8 @@ class TestC5DecisionMatrix:
     def test_recommender_produces_recommendation(
         self, summaries: list[StatisticalSummary]
     ) -> None:
-        from framework.recommender import ModelRecommender
         from contracts import Recommendation
+        from framework.recommender import ModelRecommender
 
         recommender = ModelRecommender(summaries, profile_name="devops")
         rec = recommender.recommend(use_case="integration-test")
@@ -364,8 +363,8 @@ class TestC5DecisionMatrix:
     def test_recommender_with_constraints(
         self, summaries: list[StatisticalSummary]
     ) -> None:
-        from framework.recommender import ModelRecommender
         from contracts import Recommendation
+        from framework.recommender import ModelRecommender
 
         recommender = ModelRecommender(
             summaries,
@@ -408,7 +407,7 @@ class TestC5DecisionMatrix:
         CSVExporter(engine).export(out)
 
         assert out.exists()
-        lines = [l for l in out.read_text().splitlines() if l.strip()]
+        lines = [row for row in out.read_text().splitlines() if row.strip()]
         assert len(lines) == 4  # header + 3 models
         assert "rank" in lines[0]
         assert "model_id" in lines[0]

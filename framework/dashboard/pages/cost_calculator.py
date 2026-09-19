@@ -13,9 +13,9 @@ from typing import Any
 _DASH_AVAILABLE = True
 try:
     import dash  # type: ignore[import-untyped]
-    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
     import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
     import plotly.graph_objects as go  # type: ignore[import-untyped]
+    from dash import Input, Output, State, dcc, html  # type: ignore[import-untyped]
 except ImportError:
     _DASH_AVAILABLE = False
 
@@ -147,13 +147,14 @@ def register_cost_calculator(app: Any) -> None:
         avg_prompt, avg_completion, budget,
         summaries_data,
     ):
-        from framework.decision_matrix import DecisionMatrixEngine, CRITERION_METRIC_MAP
 
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
                 metric_name: str = ""

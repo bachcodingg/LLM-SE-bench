@@ -26,13 +26,11 @@ from __future__ import annotations
 
 import itertools
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Sequence
 
 from framework.decision_matrix import (
     CRITERIA,
-    COST_CRITERIA,
-    DecisionMatrixEngine,
     MetricAggregator,
     ModelMetrics,
     Normaliser,
@@ -41,8 +39,10 @@ from framework.decision_matrix import (
 try:
     from contracts import StatisticalSummary
 except ImportError:  # pragma: no cover
-    from pydantic import BaseModel, Field as PField
     from datetime import datetime
+
+    from pydantic import BaseModel
+    from pydantic import Field as PField
 
     class StatisticalSummary(BaseModel):  # type: ignore[no-redef]
         metric_name: str = ""

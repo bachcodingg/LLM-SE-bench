@@ -257,7 +257,10 @@ def check_env_example() -> list[Finding]:
 
     referenced: set[str] = set()
     for rel in _tracked_files():
-        if not rel.endswith(".py"):
+        # Test files reference environment variables as fixtures, not as
+        # configuration; documenting a name only a test invents would be
+        # misleading.
+        if not rel.endswith(".py") or "/tests/" in rel or "/test_" in f"/{rel}":
             continue
         text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
         for match in ENV_VAR_RE.finditer(text):

@@ -1,9 +1,6 @@
 """Integration tests for stats/_pipeline.py — full analysis pipeline."""
 
 import json
-from pathlib import Path
-
-import pytest
 
 from stats._pipeline import run_full_analysis
 

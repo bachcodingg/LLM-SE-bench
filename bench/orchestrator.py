@@ -17,7 +17,6 @@ checkpoint/resume via ``ProgressTracker``.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
@@ -27,18 +26,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from bench.datasets.base import Dataset
+from bench.progress import ProgressTracker
+from bench.results import ResultCollector
+from bench.sandbox.docker_sandbox import DockerSandbox, SandboxResult
 from contracts import (
     EvaluationResult,
     LLMResponse,
     Prompt,
     Severity,
-    VerificationResult,
     Verdict,
+    VerificationResult,
 )
-from bench.datasets.base import Dataset
-from bench.sandbox.docker_sandbox import DockerSandbox, SandboxResult
-from bench.results import ResultCollector
-from bench.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -322,9 +321,7 @@ class BenchmarkOrchestrator:
 
         # 3. Write generated code
         code = response.extracted_code or response.raw_text
-        code_path = self._write_generated_code(
-            problem_id, model_id, run_id, code
-        )
+        self._write_generated_code(problem_id, model_id, run_id, code)
 
         # 4. Run in sandbox
         suite = self.dataset.get_test_suite(problem_id)

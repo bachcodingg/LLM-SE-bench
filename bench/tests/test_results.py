@@ -5,14 +5,13 @@ tests.test_results — Unit tests for ResultCollector and PassAtKCalculator.
 from __future__ import annotations
 
 import json
-import math
 import uuid
-import pytest
 from pathlib import Path
 
-from contracts import EvaluationResult, Verdict, VerificationResult, Severity
-from bench.results import ResultCollector, PassAtKCalculator
+import pytest
 
+from bench.results import PassAtKCalculator, ResultCollector
+from contracts import EvaluationResult, Severity, Verdict, VerificationResult
 
 # ======================================================================
 # Fixtures

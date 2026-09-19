@@ -9,9 +9,6 @@ throughout.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 
 class TestEndToEndPipeline:
@@ -21,9 +18,9 @@ class TestEndToEndPipeline:
         self, synthetic_summaries, summary_json_path, tmp_path, profiles_dir
     ):
         from framework.decision_matrix import DecisionMatrixEngine
+        from framework.exporters import CSVExporter, JSONExporter
         from framework.recommender import ModelRecommender
         from framework.tradeoffs import TradeoffAnalyzer
-        from framework.exporters import JSONExporter, CSVExporter
 
         # 1. Build decision matrix from JSON file
         engine = DecisionMatrixEngine.from_json_file(
@@ -194,8 +191,10 @@ class TestEdgeCases:
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):
                 metric_name: str = ""
@@ -230,8 +229,10 @@ class TestEdgeCases:
         try:
             from contracts import StatisticalSummary
         except ImportError:
-            from pydantic import BaseModel, Field as PField
             from datetime import datetime
+
+            from pydantic import BaseModel
+            from pydantic import Field as PField
 
             class StatisticalSummary(BaseModel):
                 metric_name: str = ""

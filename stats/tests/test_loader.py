@@ -1,15 +1,13 @@
 """Tests for stats/_loader.py."""
 
-import json
-import sqlite3
 
 import pandas as pd
 import pytest
 
 from stats._loader import (
+    load_cost_data,
     load_evaluation_results,
     load_quality_metrics,
-    load_cost_data,
     merge_results_quality,
 )
 

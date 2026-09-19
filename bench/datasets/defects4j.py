@@ -16,13 +16,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bench.datasets.base import Dataset
 from contracts import (
     Problem,
     TestCase,
     TestSuite,
     VerificationResult,
 )
-from bench.datasets.base import Dataset
 
 logger = logging.getLogger(__name__)
 

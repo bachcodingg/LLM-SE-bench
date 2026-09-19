@@ -18,7 +18,9 @@ from datetime import datetime
 from typing import Any
 
 from contracts import LLMResponse, Prompt
+from llm_gateway.adapters.openai import OpenAIAdapter
 from llm_gateway.clients.base import LLMClient, _new_id
+from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class GPT4Client(LLMClient):
     """
 
     provider_name: str = "gpt4"
+    adapter = OpenAIAdapter()
 
     def _get_sdk_client(self) -> Any:
         """Lazily construct and return an ``openai.OpenAI`` instance.
@@ -107,4 +110,29 @@ class GPT4Client(LLMClient):
                 "api_model": api_response.model,
                 "api_id": api_response.id,
             },
+        )
+
+    def _call_api_with_tools(
+        self,
+        conversation: Conversation,
+        tools: list[ToolSchema],
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> AssistantTurn:
+        """Send a tool-enabled conversation to the Chat Completions API."""
+        client = self._get_sdk_client()
+        request = self.adapter.encode_request(
+            conversation=conversation,
+            tools=tools,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        logger.debug(
+            "GPT-4 tool call: model=%s messages=%d tools=%d",
+            model_id, len(conversation.messages), len(tools),
+        )
+        return self.adapter.decode_response(
+            client.chat.completions.create(**request), model_id
         )

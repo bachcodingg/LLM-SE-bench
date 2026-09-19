@@ -122,6 +122,12 @@ def detect_god_classes(
         except Exception as exc:
             failures.append(f"{name}: {type(exc).__name__}: {exc}")
             continue
+        if not extracted:
+            # The extractor swallows javalang's syntax errors and returns an
+            # empty list, so an unparseable file is indistinguishable from an
+            # empty one unless it is recorded here.
+            failures.append(f"{name}: parsed no class (syntax error, or no class declared)")
+            continue
         for item in extracted:
             analysed += 1
             metrics = _to_metrics_model(item)
@@ -170,19 +176,61 @@ def _parse_class(source: str, filename: str):
     return None, set()
 
 
+def _accessed_fields(method_node, class_fields: set[str]) -> set[str]:
+    """Fields *method_node* reads, writes, or calls a method on.
+
+    C3's ``_extract_accessed_fields`` counts only ``MemberReference`` nodes,
+    so a field used purely as a call receiver — ``orders.add(x)`` — is
+    invisible to it. That under-count is tolerable in an LCOM number whose
+    value is already published; it is not tolerable here, where a missed
+    edge splits one responsibility into several and the plan comes out
+    wrong. So this walks the same tree with the receiver case added.
+
+    Deliberately not fixed in C3: changing it there would move the LCOM
+    values behind results/2026-05-run.
+    """
+    import javalang
+
+    from quality.ck_metrics import _walk_tree
+
+    accessed: set[str] = set()
+    if method_node.body is None:
+        return accessed
+
+    for node in _walk_tree(method_node.body):
+        if isinstance(node, javalang.tree.MemberReference):
+            qualifier = getattr(node, "qualifier", "")
+            if node.member in class_fields and qualifier in ("", "this"):
+                accessed.add(node.member)
+        elif isinstance(node, javalang.tree.MethodInvocation):
+            # `orders.add(x)` — the receiver is a field, the callee is not.
+            qualifier = getattr(node, "qualifier", "") or ""
+            root = qualifier.split(".")[0]
+            if root in class_fields:
+                accessed.add(root)
+        elif isinstance(node, javalang.tree.This):
+            # `this.field` parses as This(selectors=[MemberReference(...)]).
+            for selector in getattr(node, "selectors", None) or []:
+                member = getattr(selector, "member", None)
+                if member in class_fields:
+                    accessed.add(member)
+
+    return accessed
+
+
 def _method_field_map(
     class_node, field_names: set[str]
 ) -> tuple[dict[str, set[str]], dict[str, int]]:
     """Analyse every method in the class.
 
-    Returns ``({method: fields it references}, {method: cyclomatic
+    Returns ``({method: fields it touches}, {method: cyclomatic
     complexity})``. Both are keyed by method *name*, so an overloaded method
-    collapses into one entry — acceptable, because overloads of the same
-    name virtually always belong in the same extracted class.
+    collapses into one entry — acceptable, because overloads of one name
+    virtually always belong in the same extracted class.
     """
     import javalang
 
-    from quality.ck_metrics import _count_complexity, _extract_accessed_fields
+    from quality.ck_metrics import _count_complexity
 
     fields_used: dict[str, set[str]] = {}
     complexity: dict[str, int] = {}
@@ -190,7 +238,7 @@ def _method_field_map(
         if not isinstance(member, javalang.tree.MethodDeclaration):
             continue
         try:
-            accessed = _extract_accessed_fields(member, field_names)
+            accessed = _accessed_fields(member, field_names)
         except Exception:
             accessed = set()
         fields_used[member.name] = fields_used.get(member.name, set()) | accessed
@@ -254,7 +302,7 @@ def _name_for(methods: list[str], fields: set[str], class_name: str, index: int)
     return f"{class_name}Part{index + 1}"
 
 
-def _cluster_by_field(method_fields, class_name) -> list[ExtractedClassPlan]:
+def _cluster_by_field(method_fields, complexity, class_name) -> list[ExtractedClassPlan]:
     plans: list[ExtractedClassPlan] = []
     for index, (methods, fields) in enumerate(_connected_components(method_fields)):
         plans.append(
@@ -267,13 +315,13 @@ def _cluster_by_field(method_fields, class_name) -> list[ExtractedClassPlan]:
                     f"{len(fields)} field(s); no method here touches a field "
                     f"used by another cluster."
                 ),
-                estimated_wmc=sum(_METHOD_COMPLEXITY.get(m, 1) for m in methods),
+                estimated_wmc=sum(complexity.get(m, 1) for m in methods),
             )
         )
     return plans
 
 
-def _cluster_by_responsibility(method_fields, class_name) -> list[ExtractedClassPlan]:
+def _cluster_by_responsibility(method_fields, complexity, class_name) -> list[ExtractedClassPlan]:
     buckets: dict[str, list[str]] = {}
     for method in method_fields:
         match = _VERB_PREFIX.match(method)
@@ -281,9 +329,7 @@ def _cluster_by_responsibility(method_fields, class_name) -> list[ExtractedClass
         buckets.setdefault(verb, []).append(method)
 
     plans: list[ExtractedClassPlan] = []
-    for index, (verb, methods) in enumerate(
-        sorted(buckets.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-    ):
+    for verb, methods in sorted(buckets.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         fields: set[str] = set()
         for method in methods:
             fields |= method_fields[method]
@@ -293,41 +339,33 @@ def _cluster_by_responsibility(method_fields, class_name) -> list[ExtractedClass
                 methods=sorted(methods),
                 fields=sorted(fields),
                 rationale=f"{len(methods)} method(s) share the '{verb}' verb prefix.",
-                estimated_wmc=sum(_METHOD_COMPLEXITY.get(m, 1) for m in methods),
+                estimated_wmc=sum(complexity.get(m, 1) for m in methods),
             )
         )
     return plans
 
 
-def _cluster_layered(method_fields, class_name) -> list[ExtractedClassPlan]:
+def _cluster_layered(method_fields, complexity, class_name) -> list[ExtractedClassPlan]:
     accessors = sorted(m for m in method_fields if _ACCESSOR.match(m))
     behaviour = sorted(m for m in method_fields if not _ACCESSOR.match(m))
 
     plans: list[ExtractedClassPlan] = []
-    if accessors:
+    for methods, suffix, description in (
+        (accessors, "Data", "accessor(s): state, with no behaviour"),
+        (behaviour, "Service", "non-accessor method(s): the behaviour"),
+    ):
+        if not methods:
+            continue
         fields: set[str] = set()
-        for method in accessors:
+        for method in methods:
             fields |= method_fields[method]
         plans.append(
             ExtractedClassPlan(
-                proposed_name=f"{class_name}Data",
-                methods=accessors,
+                proposed_name=f"{class_name}{suffix}",
+                methods=methods,
                 fields=sorted(fields),
-                rationale=f"{len(accessors)} accessor(s): state, with no behaviour.",
-                estimated_wmc=sum(_METHOD_COMPLEXITY.get(m, 1) for m in accessors),
-            )
-        )
-    if behaviour:
-        fields = set()
-        for method in behaviour:
-            fields |= method_fields[method]
-        plans.append(
-            ExtractedClassPlan(
-                proposed_name=f"{class_name}Service",
-                methods=behaviour,
-                fields=sorted(fields),
-                rationale=f"{len(behaviour)} non-accessor method(s): the behaviour.",
-                estimated_wmc=sum(_METHOD_COMPLEXITY.get(m, 1) for m in behaviour),
+                rationale=f"{len(methods)} {description}.",
+                estimated_wmc=sum(complexity.get(m, 1) for m in methods),
             )
         )
     return plans
@@ -382,8 +420,7 @@ def propose_decomposition(
         )
 
     class_name = class_node.name
-    _METHOD_COMPLEXITY.clear()
-    method_fields = _method_field_map(class_node, field_names)
+    method_fields, complexity = _method_field_map(class_node, field_names)
 
     warnings: list[str] = []
     if not method_fields:
@@ -406,7 +443,7 @@ def propose_decomposition(
         "responsibility": _cluster_by_responsibility,
         "layered": _cluster_layered,
     }
-    plans = builders[effective](method_fields, class_name)
+    plans = builders[effective](method_fields, complexity, class_name)
 
     metrics_before = None
     is_god_class = False

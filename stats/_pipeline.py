@@ -17,20 +17,20 @@ import numpy as np
 import pandas as pd
 
 from stats._loader import (
+    load_cost_data,
     load_evaluation_results,
     load_quality_metrics,
-    load_cost_data,
     merge_results_quality,
 )
-from stats.descriptive import DescriptiveAnalyzer
-from stats.hypothesis import HypothesisEngine
-from stats.effect_size import EffectSizeCalculator
 from stats.confidence import BootstrapCI
-from stats.cost_model import CostModel
 from stats.consistency import ConsistencyAnalyzer
 from stats.correlation import CorrelationAnalyzer
-from stats.visualisation import VisualisationEngine
+from stats.cost_model import CostModel
+from stats.descriptive import DescriptiveAnalyzer
+from stats.effect_size import EffectSizeCalculator
+from stats.hypothesis import HypothesisEngine
 from stats.report_data import ReportDataGenerator
+from stats.visualisation import VisualisationEngine
 
 logger = logging.getLogger(__name__)
 

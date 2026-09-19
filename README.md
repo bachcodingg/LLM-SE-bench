@@ -4,7 +4,7 @@ An execution-based benchmark harness that evaluates LLMs on Java code
 generation, bug fixing and architectural refactoring in a reproducible Docker
 sandbox, with per-call cost accounting.
 
-[![ci](https://github.com/<OWNER>/llm-se-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/llm-se-bench/actions/workflows/ci.yml)
+[![ci](https://github.com/bachcodingg/LLM-SE-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/bachcodingg/LLM-SE-bench/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 
@@ -22,7 +22,7 @@ May 2026. Full artifact in [`results/2026-05-run/`](results/2026-05-run/).
 **Read that table as a cost result, not a capability result.** The three
 models are not statistically distinguishable on correctness — Friedman on
 weighted score gives χ² = 4.00, p = 0.135; Cochran's Q on pass/fail gives
-p = 0.368. They *are* separated by 28× on cost and, significantly, on latency
+p = 0.368. They *are* separated by 27× on cost and, significantly, on latency
 (Friedman χ² = 63.03, p < 0.001, Kendall's W = 0.54).
 
 At a ~100% pass rate the benchmark is saturated: it confirms all three models
@@ -40,20 +40,20 @@ Per dataset:
 | `godclass` | Refactoring | 7 | 100% | 100% | 90.5% |
 
 <!--
-  TODO(before first push): record a 10-15 s GIF of the Dash dashboard and
-  drop it here, under 5 MB.
+  Outstanding: a 10-15 s GIF of the Dash dashboard belongs here, under 5 MB.
     llm-se-bench dashboard --port 8050
     peek / asciinema to record, gifsicle -O3 --lossy=80 to compress
   Put it at docs/assets/dashboard.gif and reference it as:
     ![dashboard](docs/assets/dashboard.gif)
   A broken image link is worse than no image, so this stays a comment
-  until the file exists.
+  until the file exists. `scripts/project_status.py` reports it as
+  outstanding but non-blocking.
 -->
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/<OWNER>/llm-se-bench && cd llm-se-bench
+git clone https://github.com/bachcodingg/LLM-SE-bench && cd LLM-SE-bench
 cp .env.example .env                                  # add your API keys
 docker build -t llm-se-bench-sandbox:17 bench/sandbox/
 pip install -e ".[dev]"
@@ -105,7 +105,8 @@ combinatorial estimator, not "run it k times and take the max".
 | **C4** | `stats/` | Hypothesis tests, effect sizes, bootstrap CIs, cost modelling, consistency analysis. 23 figures and 8 LaTeX tables. |
 | **C5** | `framework/` | MCDA over five criteria with weighting profiles (`devops`, `audit`, `budget`), Pareto frontier, recommender, Dash dashboard, PDF/CSV/JSON export. |
 | | `mcp_servers/` | Three MCP servers exposing C1–C3 as tools an agent can call. |
-| | `agent/` | The tool-calling agent loop: workspace, five tools, six termination conditions, trajectory recording, replay. |
+| | `agent/` | The tool-calling agent loop: workspace, five tools, six termination conditions, four scaffolds, trajectory recording and replay, failure taxonomy. |
+| | `taskfactory/` | Mining, building and validating JVM repository tasks: reverse patches, build-system detection, six admission gates, contamination checks. |
 
 `contracts.py` holds every shared Pydantic model and is the only thing all
 components import. Details in [`docs/architecture.md`](docs/architecture.md).
@@ -166,12 +167,56 @@ Provider differences — Anthropic's `tool_use` blocks, OpenAI's JSON-string
 arguments, Gemini's id-less function calls — are normalised once in
 `llm_gateway/adapters/`. Details and known gaps: [`docs/agent.md`](docs/agent.md).
 
+## Where this is going
+
+v2 is repository-level agentic evaluation for JVM refactoring, scored on
+three independent axes rather than one:
+
+| | |
+|---|---|
+| **Behaviour preserved** | Tests pass, public API unchanged, pre/post agree on generated inputs |
+| **Structure improved** | CK metric deltas, with published weights and anti-gaming guards |
+| **Euros spent** | Cost per solve, not just resolve rate |
+
+Plus automatic detection of test tampering — an immutable test manifest,
+static detectors for the known cheats, and held-out suites — reported as a
+**clean solve rate** alongside the raw one. The gap between them is a result
+in its own right.
+
+Four scaffolds run behind one interface (`single_shot`, `react`,
+`plan_then_execute`, `external`), so "the model is better" can be separated
+from "my loop is better" — a confound most papers carry silently.
+
+```bash
+llm-se-bench agent run --dataset defects4j --model claude \
+  --scaffold plan_then_execute --permissions read_only \
+  --budget-eur 0.50 --total-budget-eur 5.00 --workers 4
+```
+
+Positioning and what is deliberately absent: [`docs/v2.md`](docs/v2.md).
+Schedule: [`docs/roadmap.md`](docs/roadmap.md). Failure modes:
+[`docs/risks.md`](docs/risks.md). Full index: [`docs/`](docs/README.md).
+
+The honest summary of where it stands: nine of the ten modules have a
+working, tested core. The tenth is the task factory, and running it —
+mining, building and validating 60–300 real repository tasks — is the
+remaining project.
+
+```bash
+python scripts/project_status.py
+```
+
+reports which modules are built, which are tested, and which have never
+been exercised end to end. Three currently fall in the last category, and
+the script says so rather than letting "built" read as "finished".
+
 ## Tests
 
 ```bash
-pytest -q          # 963 tests, no network, no API calls, no Docker required
+pytest -q          # 1340 tests, no network, no API calls, no Docker required
 ruff check .
-python scripts/security_sweep.py    # before every push to a public remote
+python scripts/security_sweep.py       # before every push to a public remote
+python scripts/regression_gate.py --check-prompts   # published numbers still valid?
 ```
 
 ## Limitations

@@ -28,8 +28,8 @@ honest about which parts reproduce exactly and which cannot.
 - API keys for the providers you want to call.
 
 ```bash
-git clone https://github.com/<OWNER>/llm-se-bench
-cd llm-se-bench
+git clone https://github.com/bachcodingg/LLM-SE-bench
+cd LLM-SE-bench
 pip install -e ".[dev]"
 cp .env.example .env          # fill in the keys you need
 docker build -t llm-se-bench-sandbox:17 bench/sandbox/

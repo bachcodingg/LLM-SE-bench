@@ -77,6 +77,10 @@ class ToolContext:
     #: knowing which.
     test_runner: Callable[[Workspace], ToolOutcome]
     step_index: int = 0
+    #: Access level for this run. None means full access. Set it to compare
+    #: what read-only, patch-only and full access actually buy — the usual
+    #: assumption that more access is better is cheap to test.
+    permissions: Any = None
 
 
 TOOL_SCHEMAS: list[ToolSchema] = [
@@ -220,26 +224,59 @@ class AgentToolset:
             "run_tests": self.run_tests,
         }
 
+    #: What each tool needs permission to do. Read by the permission check;
+    #: kept here so the toolset and its requirements cannot drift apart.
+    CAPABILITIES: dict[str, str] = {
+        "read_file": "read",
+        "list_dir": "read",
+        "grep": "read",
+        "apply_patch": "patch",
+        "run_tests": "execute",
+    }
+
     @property
     def names(self) -> list[str]:
         return sorted(self._handlers)
+
+    def allowed_names(self) -> list[str]:
+        """Tools this run's permission mode permits."""
+        permissions = self.context.permissions
+        if permissions is None:
+            return self.names
+        from mcp_servers.permissions import Capability
+
+        return [
+            name for name in self.names
+            if permissions.check(name, [Capability(self.CAPABILITIES[name])]) is None
+        ]
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
         """Run tool *name* with *arguments*.
 
         Never raises for anything the agent did: an unknown tool, a missing
-        argument and a tool-level failure all come back as an error
-        ``ToolOutcome`` the agent can read and recover from.
+        argument, a denied permission and a tool-level failure all come back
+        as an error ``ToolOutcome`` the agent can read and recover from.
         """
         handler = self._handlers.get(name)
         if handler is None:
             return ToolOutcome(
                 content=(
                     f"No such tool: {name!r}. Available tools: "
-                    f"{', '.join(self.names)}."
+                    f"{', '.join(self.allowed_names())}."
                 ),
                 is_error=True,
             )
+
+        permissions = self.context.permissions
+        if permissions is not None:
+            from mcp_servers.permissions import Capability
+
+            refusal = permissions.check(
+                name, [Capability(self.CAPABILITIES[name])]
+            )
+            if refusal is not None:
+                return ToolOutcome(content=refusal, is_error=True)
+
         try:
             return handler(**arguments)
         except TypeError as exc:

@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from agent.context import CompactionPolicy, ContextManager
 from agent.termination import (
     BudgetExceeded,
     BudgetGovernor,
@@ -196,6 +197,10 @@ class AgentConfig:
     worst_case_call_eur: float = 0.0
     dataset: str = ""
     task_id: str = ""
+    #: Keep the conversation inside the context window. Without it a long
+    #: episode eventually overflows and the provider errors at step 30,
+    #: which is the harness's failure recorded as the model's.
+    compaction: "CompactionPolicy | None" = None
 
 
 @dataclass
@@ -248,6 +253,12 @@ class AgentLoop:
             ceiling_eur=config.policy.max_cost_eur,
             worst_case_call_eur=config.worst_case_call_eur,
         )
+        # Named for what it manages, not "context": self.context is already
+        # the ToolContext the tools act on.
+        self.context_manager = ContextManager(
+            model_id=config.model_id,
+            policy=config.compaction or CompactionPolicy(),
+        )
 
     # ── entry point ───────────────────────────────────────────────────
 
@@ -288,6 +299,12 @@ class AgentLoop:
                 stop = StopCondition.MAX_COST
                 trajectory.error = str(exc)
                 break
+
+            # Compact before sending, not after overflowing. The provider
+            # reports an over-long conversation as an error, by which point
+            # the episode is already lost.
+            if self.context_manager.needs_compaction(conversation):
+                self.context_manager.compact(conversation, step_index=state.steps)
 
             try:
                 turn = self.client.send_conversation(
@@ -517,6 +534,7 @@ class AgentLoop:
         trajectory.files_changed = self.workspace.diff_summary()
         trajectory.edit_churn = self.workspace.churn()
         trajectory.final_workspace = self.workspace.snapshot()
+        trajectory.context = self.context_manager.stats()
 
         logger.info(
             "Episode %s ended: %s after %d step(s), €%.4f, solved=%s",

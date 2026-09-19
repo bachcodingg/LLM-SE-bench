@@ -129,6 +129,7 @@ def run_episode(
     scaffold: str = "react",
     store: TrajectoryStore | None = None,
     dry_run: bool = False,
+    permissions: str = "full",
     **config_kwargs: Any,
 ) -> Trajectory:
     """Run one episode and return — and optionally store — its trajectory.
@@ -139,28 +140,50 @@ def run_episode(
         Anything with ``send_conversation``. An ``LLMClient`` in production.
     policy
         Ceilings for the episode. ``max_cost_eur`` is required.
+    scaffold
+        Which strategy runs. See :mod:`agent.scaffolds`.
     dry_run
         Force the sandbox's structural check instead of real execution. The
         agent is told, in the tool output, that nothing was executed.
+    permissions
+        ``read_only``, ``patch_only`` or ``full``. Running the same tasks at
+        each level is how "more access is better" gets tested rather than
+        assumed.
     """
-    workspace, prompt, test_class, dataset = build_episode(task_id, data_dir)
+    from agent.scaffolds import get_scaffold
+    from mcp_servers.permissions import PermissionMode, ToolPermissions
 
-    loop = AgentLoop(
-        client=client,
-        workspace=workspace,
-        test_runner=make_sandbox_test_runner(
-            test_class_name=test_class, dry_run=dry_run
-        ),
-        config=AgentConfig(
-            model_id=model_id,
-            policy=policy,
-            scaffold=scaffold,
-            task_id=task_id,
-            dataset=dataset,
-            **config_kwargs,
-        ),
+    workspace, prompt, test_class, dataset = build_episode(task_id, data_dir)
+    test_runner = make_sandbox_test_runner(test_class_name=test_class, dry_run=dry_run)
+
+    config = AgentConfig(
+        model_id=model_id,
+        policy=policy,
+        scaffold=scaffold,
+        task_id=task_id,
+        dataset=dataset,
+        **config_kwargs,
     )
-    trajectory = loop.run(prompt)
+
+    strategy = get_scaffold(scaffold)
+    if permissions != "full" and scaffold == "react":
+        # Only the ReAct loop routes tool calls through a toolset, so this
+        # is where a permission mode can be applied. Applying it elsewhere
+        # silently would be worse than not offering it.
+        loop = AgentLoop(
+            client=client, workspace=workspace,
+            test_runner=test_runner, config=config,
+        )
+        loop.context.permissions = ToolPermissions(mode=PermissionMode(permissions))
+        trajectory = loop.run(prompt)
+    else:
+        if permissions != "full":
+            logger.warning(
+                "Permission mode %r is only enforced for the 'react' scaffold; "
+                "%r runs with full access.", permissions, scaffold,
+            )
+        trajectory = strategy.run(client, workspace, test_runner, config, prompt)
+
     if store is not None:
         store.save(trajectory)
     return trajectory
@@ -176,13 +199,40 @@ def run_episodes(
     store: TrajectoryStore | None = None,
     dry_run: bool = False,
     total_budget_eur: float | None = None,
+    permissions: str = "full",
+    workers: int = 1,
 ) -> list[Trajectory]:
     """Run several episodes, stopping if the run-level budget runs out.
 
     ``policy.max_cost_eur`` bounds a single episode. ``total_budget_eur``
     bounds the whole run: without it, N tasks can cost N times the per-episode
     ceiling, which is rarely what anyone intended when they set that ceiling.
+
+    With *workers* above 1 the episodes run concurrently under a shared,
+    locked budget — see :mod:`agent.parallel` for why a naive per-worker
+    budget check does not hold.
     """
+    if workers > 1:
+        from agent.parallel import ParallelRunner, RunBudget
+
+        def one(task_id: str) -> Trajectory:
+            return run_episode(
+                task_id=task_id, model_id=model_id, client=client, policy=policy,
+                data_dir=data_dir, scaffold=scaffold, store=None,
+                dry_run=dry_run, permissions=permissions,
+            )
+
+        result = ParallelRunner(
+            workers=workers,
+            budget=RunBudget(total_budget_eur) if total_budget_eur else None,
+            per_episode_reserve_eur=policy.max_cost_eur,
+            store=store,
+        ).run(list(task_ids), one)
+
+        for task_id, reason in result.failed.items():
+            logger.warning("Episode for %s failed: %s", task_id, reason)
+        return result.trajectories
+
     trajectories: list[Trajectory] = []
     spent = 0.0
 
@@ -219,6 +269,7 @@ def run_episodes(
                 scaffold=scaffold,
                 store=store,
                 dry_run=dry_run,
+                permissions=permissions,
             )
         except EpisodeSetupError as exc:
             # A task that cannot be set up is a harness limitation, not a

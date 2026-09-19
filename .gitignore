@@ -45,10 +45,19 @@ coverage.xml
 cache/
 
 # Outputs (generated, not source)
-quality/
 analysis/
 reports/
 *.log
+
+# quality/ is NOT purely generated: it holds the C3 source (ck_metrics,
+# complexity, readability, refactoring, structural, tamper, difftest) as
+# well as one output directory per dataset. Ignoring the whole package —
+# which this file used to do — silently left C3 out of the repository
+# while cli.py and every MCP tool imported it, so a fresh clone could not
+# run. Ignore the per-dataset output directories only.
+quality/*/
+!quality/tests/
+!quality/test_data/
 
 # results/ is generated too, with one exception: the published run
 # artifact the README points at. git will not descend into an ignored

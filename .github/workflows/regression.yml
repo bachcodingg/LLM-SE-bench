@@ -1,0 +1,125 @@
+name: regression
+
+# Two jobs that protect published numbers from silent invalidation.
+#
+# `prompts` runs on every pull request and costs nothing: it compares the
+# prompt template hashes against the published baseline manifest. A changed
+# template is not blocked — changing a prompt is legitimate — but it must be
+# declared, because it invalidates comparison with every number the baseline
+# holds.
+#
+# `nightly` runs the real benchmark against a fixed smoke subset and fails
+# when the resolve rate drops. It needs API keys, so it is skipped on forks
+# and on any repository that has not configured them.
+
+on:
+  pull_request:
+  schedule:
+    # 03:00 UTC daily. Off-peak for every provider's rate limits.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tolerance:
+        description: "Allowed drop in resolve rate (fraction)"
+        default: "0.05"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  prompts:
+    name: prompt and tool versioning
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compare prompt hashes against the published baseline
+        id: gate
+        run: |
+          python scripts/regression_gate.py \
+            --baseline results/2026-05-run \
+            --check-prompts \
+            --markdown gate.md
+        continue-on-error: true
+      - name: Comment on the pull request
+        if: steps.gate.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('gate.md', 'utf8');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+      - name: Require the change to be declared
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "A prompt template changed. That is allowed, but it makes the"
+          echo "published numbers stale. Say so in the PR description, re-run"
+          echo "the smoke subset, and regenerate the baseline manifest."
+          exit 1
+
+  nightly:
+    name: nightly benchmark
+    runs-on: ubuntu-latest
+    # Forks have no secrets, and a job that always fails there trains people
+    # to ignore red builds.
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository_owner != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+      - name: Build the sandbox image
+        run: docker build -t llm-se-bench-sandbox:17 bench/sandbox/
+      - name: Check for API keys
+        id: keys
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "No ANTHROPIC_API_KEY configured; skipping the paid run."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run the smoke subset
+        if: steps.keys.outputs.available == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # A hard ceiling, in the workflow rather than in a script, so a
+          # runaway loop cannot spend more than this however it fails.
+          LLM_SE_BENCH_BUDGET_EUR: "2.00"
+        run: |
+          llm-se-bench run --dataset humaneval --models claude \
+            --runs 1 --limit 10 --output-dir results/nightly
+          python scripts/build_run_artifact.py \
+            --name nightly --results-dir results/nightly
+      - name: Regression gate
+        if: steps.keys.outputs.available == 'true'
+        run: |
+          python scripts/regression_gate.py \
+            --baseline results/2026-05-run \
+            --candidate results/nightly/nightly \
+            --tolerance "${{ github.event.inputs.tolerance || '0.05' }}"
+      - name: Publish the nightly artifact
+        if: steps.keys.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-run
+          path: results/nightly/
+          retention-days: 30

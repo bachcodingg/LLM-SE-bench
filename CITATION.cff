@@ -6,9 +6,7 @@ authors:
   - given-names: "Gia Bach"
     family-names: "Vo"
     email: "hung072912@gmail.com"
-# TODO(before first push): replace <OWNER> with the GitHub account this is
-# published under. grep for "<OWNER>" to find every place it appears.
-repository-code: "https://github.com/<OWNER>/llm-se-bench"
+repository-code: "https://github.com/bachcodingg/LLM-SE-bench"
 abstract: >-
   llm-se-bench evaluates large language models on Java code generation, bug
   fixing and God Class refactoring inside a deterministic Docker sandbox.

@@ -160,6 +160,14 @@ class Trajectory(BaseModel):
                     "replay possible: scoring can be redone from here with no "
                     "API call.",
     )
+    context: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Context-window statistics: window size, how many times "
+                    "the conversation was compacted, tokens saved. A "
+                    "non-zero compaction count means the episode dropped "
+                    "detail, which is worth knowing before blaming the model "
+                    "for forgetting something.",
+    )
     error: str = Field(default="")
 
     # ── derived process metrics ───────────────────────────────────────

@@ -128,6 +128,6 @@ cost_per_correct_bar.pdf` plots cost per passing evaluation.
 
 On this run that comparison is stark and slightly unfair: with all three
 models at or near 100%, cost per correct answer is just cost, and Gemini
-wins by 28×. The honest reading is that these tasks are too easy to
+wins by 27×. The honest reading is that these tasks are too easy to
 distinguish capability, so price is the only axis left. See
 [`methodology.md`](methodology.md#limitations).

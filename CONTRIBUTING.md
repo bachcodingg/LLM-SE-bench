@@ -21,8 +21,8 @@ does not un-leak a credential that has already been pushed.
 ## Setup
 
 ```bash
-git clone https://github.com/<OWNER>/llm-se-bench
-cd llm-se-bench
+git clone https://github.com/bachcodingg/LLM-SE-bench
+cd LLM-SE-bench
 pip install -e ".[dev,mcp]"
 cp .env.example .env     # add keys only for providers you will call
 ```

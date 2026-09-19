@@ -105,6 +105,7 @@ testpaths = [
     "framework/tests",
     "mcp_servers/tests",
     "agent/tests",
+    "taskfactory/tests",
     "tests",
 ]
 python_files = ["test_*.py"]

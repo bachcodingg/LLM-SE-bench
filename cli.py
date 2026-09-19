@@ -628,9 +628,16 @@ def agent_group() -> None:
 @click.option("--limit", "-l", default=None, type=int,
               help="Attempt only the first N tasks of --dataset.")
 @click.option("--scaffold", default="react", show_default=True,
-              type=click.Choice(["react", "single-shot-baseline"]),
+              type=click.Choice(["react", "plan_then_execute", "single_shot"]),
               help="Which agent scaffold to run. Recorded on the trajectory so "
                    "'the model is better' can be separated from 'my loop is better'.")
+@click.option("--permissions", default="full", show_default=True,
+              type=click.Choice(["read_only", "patch_only", "full"]),
+              help="What the agent may do. Run the same tasks at each level "
+                   "to measure what access actually buys.")
+@click.option("--workers", default=1, show_default=True,
+              help="Episodes to run concurrently. Each holds a Docker "
+                   "container while its tests run.")
 @click.option("--dry-run", is_flag=True,
               help="Mock the model and skip Docker. Makes no API call and "
                    "costs nothing; the results are not benchmark scores.")
@@ -651,6 +658,8 @@ def agent_run(
     wall_clock: float,
     limit: int | None,
     scaffold: str,
+    permissions: str,
+    workers: int,
     dry_run: bool,
     output_dir: str,
     compare: bool,
@@ -737,6 +746,8 @@ def agent_run(
     click.echo(f"Model:          {resolved_model}")
     click.echo(f"Tasks:          {len(selected)}")
     click.echo(f"Scaffold:       {scaffold}")
+    click.echo(f"Permissions:    {permissions}")
+    click.echo(f"Workers:        {workers}")
     click.echo(f"Budget/episode: EUR {policy.max_cost_eur:.2f}")
     if total_budget_eur:
         click.echo(f"Budget/run:     EUR {total_budget_eur:.2f}")
@@ -752,6 +763,8 @@ def agent_run(
         store=store,
         dry_run=dry_run,
         total_budget_eur=total_budget_eur,
+        permissions=permissions,
+        workers=workers,
     )
 
     if not trajectories:

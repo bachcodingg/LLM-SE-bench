@@ -110,6 +110,7 @@ def create_app(
             dbc.NavItem(dbc.NavLink("Deep Dive", href="/deep-dive")),
             dbc.NavItem(dbc.NavLink("Decision Tool", href="/decision-tool")),
             dbc.NavItem(dbc.NavLink("Cost Calculator", href="/cost-calculator")),
+            dbc.NavItem(dbc.NavLink("Trajectories", href="/trajectories")),
         ],
     )
 
@@ -143,6 +144,17 @@ def create_app(
     register_decision_tool(app)
     register_cost_calculator(app)
 
+    # Agent trajectories. Registered defensively: the page reads episode
+    # files that may not exist yet, and a dashboard that will not start
+    # because nobody has run an agent episode is worse than one missing a
+    # tab.
+    try:
+        from framework.dashboard.pages.trajectory import register_callbacks
+
+        register_callbacks(app)
+    except Exception as exc:  # noqa: BLE001 - a missing page must not be fatal
+        logger.warning("Trajectory page unavailable: %s", exc)
+
     @app.callback(
         dash.Output("page-content", "children"),
         [dash.Input("url", "pathname")],
@@ -159,6 +171,10 @@ def create_app(
             return decision_tool_layout()
         elif pathname == "/cost-calculator":
             return cost_calculator_layout()
+        elif pathname == "/trajectories":
+            from framework.dashboard.pages.trajectory import layout as trajectory_layout
+
+            return trajectory_layout()
         return overview_layout()
 
     return app

@@ -43,7 +43,7 @@ dependencies = [
     "pandas>=2.2",
     "scikit-posthocs>=0.9",
     # Visualisation
-    "matplotlib>=3.8",
+    "matplotlib>=3.9",
     "seaborn>=0.13",
     # Dashboard
     "plotly>=5.20",
@@ -77,6 +77,11 @@ mcp = [
 [project.scripts]
 llm-se-bench = "cli:main"
 llm-se-bench-mcp = "mcp_servers.__main__:main"
+
+[tool.setuptools]
+# Top-level modules; packages.find only collects packages, so without this
+# the installed `llm-se-bench` command cannot import `cli`.
+py-modules = ["cli", "contracts", "settings"]
 
 [tool.setuptools.packages.find]
 where = ["."]

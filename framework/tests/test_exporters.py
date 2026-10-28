@@ -258,7 +258,7 @@ class TestPDFReporter:
     def test_export_html_fallback(
         self, synthetic_summaries, tmp_path, profiles_dir
     ):
-        """When weasyprint is not available, should write HTML fallback."""
+        """A PDF when weasyprint works, otherwise an HTML fallback beside it."""
         from framework.pdf_report import PDFReporter
 
         reporter = PDFReporter(
@@ -266,8 +266,10 @@ class TestPDFReporter:
             profile_name="budget",
             profiles_dir=str(profiles_dir),
         )
-        # Try to export — if weasyprint isn't installed, HTML fallback
         p = reporter.export(tmp_path / "test_report.pdf")
         assert p.exists()
-        content = p.read_text()
-        assert "Decision Report" in content
+        if p.suffix == ".pdf":
+            assert p.read_bytes().startswith(b"%PDF")
+        else:
+            assert p.suffix == ".html"
+            assert "Decision Report" in p.read_text(encoding="utf-8")

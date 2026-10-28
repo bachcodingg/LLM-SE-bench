@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from bench.sandbox.docker_sandbox import DockerSandbox
 from mcp_servers.registry import DATASET_CATEGORY, RunRegistry, get_registry
 from mcp_servers.tools.bench import (
     MEAN_COST_USD_PER_EVALUATION,
@@ -165,6 +166,10 @@ public class HasCloseElements {
         assert result.metrics
         assert result.metrics["wmc"] >= 1
 
+    @pytest.mark.skipif(
+        not DockerSandbox().is_docker_available(),
+        reason="needs Docker: without it the tests are not executed, which is an error",
+    )
     def test_an_unchanged_god_class_is_not_a_pass(self):
         """Its tests pass. That is the point: tests cannot tell it apart."""
         from bench.datasets.godclass import GodClassDataset

@@ -188,7 +188,7 @@ class VisualisationEngine:
         fig, ax = plt.subplots(figsize=(8, 5))
         models = sorted(df[model_col].unique())
         data = [df.loc[df[model_col] == m, score_col].dropna().values for m in models]
-        bp = ax.boxplot(data, labels=models, patch_artist=True, showmeans=True)
+        bp = ax.boxplot(data, tick_labels=models, patch_artist=True, showmeans=True)
         for i, patch in enumerate(bp["boxes"]):
             patch.set_facecolor(_PALETTE[i % len(_PALETTE)])
             patch.set_alpha(0.7)
@@ -217,7 +217,7 @@ class VisualisationEngine:
             fig, ax = plt.subplots(figsize=(8, 5))
             models = sorted(df[model_col].unique())
             data = [df.loc[df[model_col] == m, col].dropna().values for m in models]
-            bp = ax.boxplot(data, labels=models, patch_artist=True, showmeans=True)
+            bp = ax.boxplot(data, tick_labels=models, patch_artist=True, showmeans=True)
             for i, patch in enumerate(bp["boxes"]):
                 patch.set_facecolor(_PALETTE[i % len(_PALETTE)])
                 patch.set_alpha(0.7)
@@ -789,7 +789,7 @@ class VisualisationEngine:
             models = sorted(sub[model_col].unique())
             data = [sub.loc[sub[model_col] == m, score_col].dropna().values
                     for m in models]
-            bp = ax.boxplot(data, labels=models, patch_artist=True)
+            bp = ax.boxplot(data, tick_labels=models, patch_artist=True)
             for i, patch in enumerate(bp["boxes"]):
                 patch.set_facecolor(_PALETTE[i % len(_PALETTE)])
                 patch.set_alpha(0.7)

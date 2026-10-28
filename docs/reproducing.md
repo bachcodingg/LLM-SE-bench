@@ -1,12 +1,13 @@
 # Reproducing the published run
 
-`results/2026-05-run/` is the artifact of a real run: 522 evaluations across
-3 models, 672 API calls, $3.52. This page gives the exact commands, and is
-honest about which parts reproduce exactly and which cannot.
+`results/2026-10-run/` is the artifact of a real run: 696 evaluations across
+4 models, 58 tasks, 3 samples each, every one executed under `javac` and
+JUnit in Docker, $2.20. This page gives the exact commands, and is honest
+about which parts reproduce exactly and which cannot.
 
 ## What is pinned
 
-`results/2026-05-run/manifest.json` records:
+`results/2026-10-run/manifest.json` records:
 
 | Field | Why it is there |
 |---|---|
@@ -16,9 +17,11 @@ honest about which parts reproduce exactly and which cannot.
 | `models` | Exact provider model ids |
 | `wall_clock` | First and last API call, so a reader can tell which model version was live |
 | `cost_usd`, `tokens` | Per-model spend and token counts, recorded at call time |
-| `sampling` | Temperature 0, no seed available, 3 runs per problem |
-| `sandbox` | Dockerfile hash (see the caveat below) |
+| `sampling` | Temperature 0 where the provider accepts it, no seed, 3 samples per task |
+| `sandbox` | Image digest of the sandbox the run executed in |
 | `python_lockfile` | Hash of `requirements.lock` |
+| `counts.evaluations_not_executed` | Must be 0; the artifact is refused otherwise |
+| `duplicates_dropped`, `reexecuted` | What was deduplicated and re-executed, and which verdicts changed |
 
 ## Prerequisites
 
@@ -47,36 +50,48 @@ llm-se-bench gateway test              # one trivial call per provider (~$0.001)
 Then a full dry-run, which makes no API calls at all:
 
 ```bash
-llm-se-bench run --dataset humaneval --models claude gpt4 gemini \
+llm-se-bench run --dataset humaneval -m claude-sonnet-5-5 -m gpt-5.6-terra \
   --runs 3 --dry-run --output-dir /tmp/dry
 ```
 
+`--models` / `-m` is repeated once per model; `--models a b c` does not work.
+
 ## The run
 
-Four datasets, three models, three runs each. This is the command that
+Four datasets, four models, three samples each. This is the script that
 produced the published artifact:
 
 ```bash
-for ds in humaneval mbpp defects4j godclass; do
-  llm-se-bench run --dataset "$ds" \
-    --models claude-sonnet-4-6 gpt-4o gemini-2.5-flash \
-    --runs 3 --max-concurrency 3 --output-dir results
-done
+scripts/run_2026_10.sh            # all four models
+scripts/run_2026_10.sh claude-haiku-5-5   # or a subset
 ```
 
-Expect roughly **$3.50 and about 90 minutes of wall clock**. The response
-cache means a re-run against an unchanged prompt costs nothing, so an
-interrupted run resumes cheaply — delete `llm_cache.db` only if you want to
-pay for the whole thing again.
+It loops over the datasets with `--runs 3 --max-concurrency 3`. Expect
+roughly **$2.20**. A real run resumes from `results.jsonl`, so re-running
+after an interruption skips finished samples. **Run one process at a
+time**: two overlapping processes evaluate the same samples twice and
+overwrite each other's code files (this happened once in the published
+run; see `duplicates_dropped` in the manifest).
 
-Then quality, statistics, report:
+Docker needs memory. On a 16 GB Windows host, cap WSL 2 in
+`%USERPROFILE%\.wslconfig` (`[wsl2]`, `memory=4GB`) and close what you can:
+a container killed for memory used to be recorded as a compile error
+against the model. It is now recorded as *not executed*, and the artifact
+builder refuses a run that has any.
+
+Then re-execute, build the artifact and the leaderboard. None of these
+makes an API call:
 
 ```bash
-llm-se-bench quality --input results/ --output quality/
-llm-se-bench stats  --input results/ --quality quality/ --output analysis/
-llm-se-bench report --input analysis/statistical_summary.json --format pdf
-python scripts/build_run_artifact.py --name my-run
+python scripts/reexecute.py          # every recorded response, from the cache
+python scripts/build_run_artifact.py --name 2026-10-run
+python scripts/leaderboard.py --run results/2026-10-run
 ```
+
+`reexecute.py` is optional on a healthy host; it is how the published run
+recovered from one that was not. It keeps each file's original rows as
+`results.first-pass.jsonl` and records the changed verdicts in the
+manifest.
 
 ## What will not reproduce exactly, and why
 
@@ -91,25 +106,20 @@ total will differ if prices have changed. Euro figures additionally depend on
 `LLM_SE_BENCH_USD_PER_EUR`.
 
 **Latency.** Depends on your network, your region and provider load. The
-published latency comparison is internally valid — all three models were
+published latency comparison is internally valid — all four models were
 measured under the same conditions in the same window — and is not a claim
 about absolute speed.
 
-**The sandbox image.** The manifest records the *Dockerfile* hash, not an
-image digest: no digest was captured at run time. The base image
-`eclipse-temurin:17-jdk-jammy` is a moving tag, so a rebuild today gets a
-newer JDK 17 patch level and newer `junit4` and `maven` packages from apt.
-For these tasks — single-file classes, JUnit 4 assertions — that is very
-unlikely to change a verdict, but it is a real gap. **If you run this
-yourself, record the digest**:
+**The sandbox image.** The manifest records the digest of the image the
+run executed in. The base image `eclipse-temurin:17-jdk-jammy` is a moving
+tag, so a rebuild today may get a newer JDK 17 patch level and newer
+`junit4` packages. For single-file classes and JUnit 4 assertions that is
+very unlikely to change a verdict. Compare your digest with the manifest's:
 
 ```bash
 docker image inspect llm-se-bench-sandbox:17 \
   --format '{{index .RepoDigests 0}}'
 ```
-
-and pin the base image by digest in `bench/sandbox/Dockerfile` before the
-run, not after.
 
 **The response cache is not shipped.** `llm_cache.db` holds full prompts and
 model outputs and is git-ignored. This means a fresh clone cannot rebuild the
@@ -126,16 +136,3 @@ Rebuilds into a temporary directory and diffs `summary.csv` and
 `evaluations.csv` against what is committed. A difference means either
 `results/` has changed or the artifact was edited by hand — it should never
 be edited by hand.
-
-## Known gap in the published analysis
-
-`analysis/statistical_summary.json` was generated without `--db`, so it
-reports `"n_cost": 0` and zeros in the `avg_cost_usd` column of the model
-rankings. The cost numbers quoted in the README and in
-`results/2026-05-run/summary.csv` come from the cost database directly and
-are correct. `--db` now defaults to the configured cache path, so
-regenerating the analysis picks the cost data up:
-
-```bash
-llm-se-bench stats --input results/ --quality quality/ --output analysis/
-```

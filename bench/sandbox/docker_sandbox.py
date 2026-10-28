@@ -30,6 +30,23 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _died_silently(proc: subprocess.CompletedProcess) -> bool:
+    """A non-zero exit with no output at all.
+
+    javac and JUnit always explain a failure. Silence means the container
+    was killed (out of memory, a daemon under pressure) before the tool
+    could speak, which says nothing about the code under test.
+    """
+    return proc.returncode != 0 and not (proc.stdout + proc.stderr).strip()
+
+
+def _silent_death_message(tool: str, returncode: int) -> str:
+    return (
+        f"{tool} exited {returncode} with no output: the container was likely "
+        "killed (host out of memory?). Not a verdict on the code; re-run it."
+    )
+
+
 @dataclass
 class SandboxResult:
     """Result of a sandbox compilation + test execution run."""
@@ -49,6 +66,11 @@ class SandboxResult:
     error_message: str = ""
     individual_results: list[dict[str, Any]] = field(default_factory=list)
 
+    #: True only when javac/JUnit actually ran in a container. The dry-run
+    #: structural check leaves it False, and it credits every ``@Test`` as
+    #: passing, so a pass with ``executed=False`` is not evidence of anything.
+    executed: bool = False
+
     @property
     def all_passed(self) -> bool:
         return self.compiled and self.tests_passed == self.tests_total and self.tests_total > 0
@@ -67,6 +89,7 @@ class SandboxResult:
             "test_time_ms": self.test_time_ms,
             "exit_code": self.exit_code,
             "timed_out": self.timed_out,
+            "executed": self.executed,
             "error_message": self.error_message,
             "all_passed": self.all_passed,
             "pass_rate": self.pass_rate,
@@ -442,7 +465,7 @@ class DockerSandbox:
         self, staging_dir: Path, class_name: str, test_class_name: str | None
     ) -> SandboxResult:
         """Compile Java sources inside Docker container."""
-        result = SandboxResult(problem_id=class_name)
+        result = SandboxResult(problem_id=class_name, executed=True)
 
         cmd = [
             "docker", "run", "--rm",
@@ -475,9 +498,15 @@ class DockerSandbox:
             if proc.returncode == 0:
                 result.compiled = True
                 logger.debug("Compilation succeeded for %s (%.0fms)", class_name, elapsed)
+            elif _died_silently(proc):
+                result.executed = False
+                result.error_message = _silent_death_message("javac", proc.returncode)
+                logger.warning("%s: %s", class_name, result.error_message)
             else:
-                result.error_message = f"Compilation failed: {proc.stderr[:500]}"
-                logger.debug("Compilation failed for %s: %s", class_name, proc.stderr[:200])
+                # javac's diagnostics arrive on stdout: the command redirects 2>&1.
+                combined = (proc.stdout + proc.stderr).strip()
+                result.error_message = f"Compilation failed: {combined[:500]}"
+                logger.debug("Compilation failed for %s: %s", class_name, combined[:200])
 
         except subprocess.TimeoutExpired:
             result.timed_out = True
@@ -492,7 +521,7 @@ class DockerSandbox:
         Differs from :meth:`_docker_compile` only in globbing ``src/`` rather
         than the fixed ``src/ + test/`` pair, so it works for N files.
         """
-        result = SandboxResult()
+        result = SandboxResult(executed=True)
 
         cmd = [
             "docker", "run", "--rm",
@@ -521,7 +550,10 @@ class DockerSandbox:
             result.compile_stdout = proc.stdout
             result.compile_stderr = proc.stderr
             result.compiled = proc.returncode == 0
-            if not result.compiled:
+            if not result.compiled and _died_silently(proc):
+                result.executed = False
+                result.error_message = _silent_death_message("javac", proc.returncode)
+            elif not result.compiled:
                 combined = (proc.stdout + proc.stderr).strip()
                 result.error_message = f"Compilation failed: {combined[:500]}"
         except subprocess.TimeoutExpired:
@@ -538,6 +570,7 @@ class DockerSandbox:
         if not test_class_name:
             result.error_message = "No test class to run"
             return result
+        result.executed = True
 
         cmd = [
             "docker", "run", "--rm",
@@ -567,6 +600,10 @@ class DockerSandbox:
             result.test_stdout = proc.stdout
             result.test_stderr = proc.stderr
             result.exit_code = proc.returncode
+            if _died_silently(proc):
+                result.executed = False
+                result.error_message = _silent_death_message("JUnit", proc.returncode)
+                return result
 
             # Parse JUnit output
             result.tests_total, result.tests_passed = self._parse_junit_output(

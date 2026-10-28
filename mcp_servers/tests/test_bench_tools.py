@@ -165,6 +165,22 @@ public class HasCloseElements {
         assert result.metrics
         assert result.metrics["wmc"] >= 1
 
+    def test_an_unchanged_god_class_is_not_a_pass(self):
+        """Its tests pass. That is the point: tests cannot tell it apart."""
+        from bench.datasets.godclass import GodClassDataset
+
+        original = GodClassDataset(data_dir="data").get_original_code("GC_001")
+        result = evaluate_patch("GC_001", original)
+        assert result.ok is True
+        assert result.verdict == "partial"
+        assert result.structural["credited"] is False
+        assert any("branching" in reason for reason in result.structural_reasons)
+
+    def test_non_refactoring_tasks_carry_no_structural_score(self):
+        result = evaluate_patch("HumanEval_0", "public class A { void f() {} }")
+        assert result.structural == {}
+        assert result.structural_reasons == []
+
     def test_unparseable_patch_still_returns_a_verdict(self, broken_class):
         result = evaluate_patch("HumanEval_0", broken_class)
         assert result.ok is True

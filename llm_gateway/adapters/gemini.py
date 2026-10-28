@@ -54,6 +54,22 @@ def synthetic_call_id(function_name: str, index: int) -> str:
     return f"gemini-{function_name}-{index}"
 
 
+
+def output_token_count(meta: Any, prompt_tokens: int) -> int:
+    """Billed output tokens: the answer plus the model's thinking.
+
+    Thinking is billed as output. Older SDKs do not expose
+    ``thoughts_token_count``, so total minus prompt is used as the floor.
+    """
+    def count(name: str) -> int:
+        value = getattr(meta, name, 0)
+        return value if isinstance(value, int) else 0
+
+    return max(
+        count("candidates_token_count") + count("thoughts_token_count"),
+        count("total_token_count") - prompt_tokens,
+    )
+
 class GeminiAdapter(ProviderAdapter):
     """Neutral types to and from the Gemini generate_content API."""
 
@@ -170,7 +186,7 @@ class GeminiAdapter(ProviderAdapter):
         prompt_tokens = getattr(meta, "prompt_token_count", 0) or 0 if meta else 0
         usage = TokenUsage(
             input_tokens=max(0, prompt_tokens - cached),
-            output_tokens=(getattr(meta, "candidates_token_count", 0) or 0) if meta else 0,
+            output_tokens=output_token_count(meta, prompt_tokens) if meta else 0,
             cache_read_tokens=cached,
         )
 

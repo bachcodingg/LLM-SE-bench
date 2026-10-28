@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from llm_gateway.adapters import ProviderAdapter
+from llm_gateway.config import rejects_temperature
 from llm_gateway.conversation import (
     AssistantTurn,
     Conversation,
@@ -99,8 +100,9 @@ class AnthropicAdapter(ProviderAdapter):
             "model": model_id,
             "messages": self.encode_conversation(conversation),
             "max_tokens": max_tokens,
-            "temperature": temperature,
         }
+        if not rejects_temperature(model_id):
+            request["temperature"] = temperature
         if conversation.system:
             request["system"] = conversation.system
         if tools:

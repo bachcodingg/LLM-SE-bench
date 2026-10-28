@@ -22,7 +22,7 @@ Usage
 ::
 
     python scripts/build_run_artifact.py                   # defaults below
-    python scripts/build_run_artifact.py --name 2026-05-run --check
+    python scripts/build_run_artifact.py --name 2026-10-run --check
 
 ``--check`` rebuilds into a temporary directory and diffs against the
 committed artifact instead of overwriting it, which is what CI wants.
@@ -39,13 +39,16 @@ import sqlite3
 import statistics
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from llm_gateway.config import rejects_temperature  # noqa: E402
+from quality.structural import SCORE_WEIGHTS, explain_score  # noqa: E402
 
 # Figures the published artifact carries.  The full set stays in analysis/.
 PUBLISHED_FIGURES = [
@@ -59,15 +62,22 @@ PUBLISHED_FIGURES = [
     "critical_difference.pdf",
 ]
 
+# Where scripts/reexecute.py keeps each file's rows as the run recorded them.
+FIRST_PASS_NAME = "results.first-pass.jsonl"
+
 
 # --------------------------------------------------------------------------
 # Inputs
 # --------------------------------------------------------------------------
 
-def load_evaluations(results_dir: Path) -> list[dict[str, Any]]:
-    """Read every ``results/<dataset>/<model>/results.jsonl`` into flat rows."""
+def load_evaluations(
+    results_dir: Path, filename: str = "results.jsonl",
+) -> list[dict[str, Any]]:
+    """Read every ``results/<dataset>/<model>/<filename>`` into flat rows."""
     rows: list[dict[str, Any]] = []
-    for jsonl in sorted(results_dir.glob("*/*/results.jsonl")):
+    for jsonl in sorted(results_dir.glob(f"*/*/{filename}")):
+        if jsonl.parent.parent.name.startswith("_"):
+            continue  # set-aside material: old raw runs, excluded models
         dataset = jsonl.parent.parent.name
         model = jsonl.parent.name
         for line in jsonl.read_text(encoding="utf-8").splitlines():
@@ -79,6 +89,28 @@ def load_evaluations(results_dir: Path) -> list[dict[str, Any]]:
             record["model_id"] = model
             rows.append(record)
     return rows
+
+
+def last_per_sample(
+    evaluations: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split *evaluations* into (kept, dropped): one row per sample.
+
+    Two overlapping run processes can each record the same (model, task,
+    sample). Both are real, independent calls, but they share one code
+    file and one cache slot, so only the later one's code survives. The
+    row recorded last is kept, whatever its verdict: it is the only one
+    that can still be audited and re-run, and the choice cannot favour a
+    model.
+    """
+    kept: dict[tuple[Any, ...], dict[str, Any]] = {}
+    dropped: list[dict[str, Any]] = []
+    for row in sorted(evaluations, key=lambda r: r.get("recorded_at") or r["evaluated_at"]):
+        key = (row["dataset"], row["model_id"], row["problem_id"], row.get("sample_index"))
+        if key in kept:
+            dropped.append(kept[key])
+        kept[key] = row
+    return list(kept.values()), dropped
 
 
 def load_cost_records(db_path: Path) -> list[dict[str, Any]]:
@@ -93,18 +125,20 @@ def load_cost_records(db_path: Path) -> list[dict[str, Any]]:
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.execute(
-            "SELECT model_id, prompt_tokens, completion_tokens, "
+            "SELECT response_id, model_id, prompt_tokens, completion_tokens, "
             "total_cost_usd, created_at FROM cost_records"
         )
         return [
             {
+                "response_id": response_id,
                 "model_id": model_id,
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "total_cost_usd": cost,
                 "created_at": created_at,
             }
-            for model_id, prompt_tokens, completion_tokens, cost, created_at in cursor
+            for response_id, model_id, prompt_tokens, completion_tokens, cost, created_at
+            in cursor
         ]
     finally:
         conn.close()
@@ -236,8 +270,32 @@ def summarise(
     return summary
 
 
-def flatten_evaluations(evaluations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Per-evaluation rows for the CSV, with generated code left out."""
+def records_for(
+    evaluations: list[dict[str, Any]],
+    cost_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """The cost records of the responses these evaluations scored.
+
+    The database is shared by every run on the machine: agent episodes,
+    connectivity checks, earlier runs. Summing it by model id would charge
+    all of them to this run.
+    """
+    responses = {row.get("response_id") for row in evaluations}
+    return [record for record in cost_records if record.get("response_id") in responses]
+
+
+def flatten_evaluations(
+    evaluations: list[dict[str, Any]],
+    cost_records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Per-evaluation rows for the CSV, with generated code left out.
+
+    ``cost_usd`` is the cost of the response the row scored. A cache hit
+    reuses an earlier response, so its cost is that response's, not zero.
+    """
+    cost_by_response = {
+        record.get("response_id"): record["total_cost_usd"] for record in cost_records or []
+    }
     return [
         {
             "evaluation_id": row["evaluation_id"],
@@ -249,7 +307,26 @@ def flatten_evaluations(evaluations: list[dict[str, Any]]) -> list[dict[str, Any
             "tests_total": row["tests_total"],
             "weighted_score": row["weighted_score"],
             "compile_success": row["compile_success"],
+            # Blank for rows recorded before these fields existed: unknown,
+            # which is not the same as executed.
+            "tests_executed": row.get("tests_executed", ""),
+            "sample_index": row.get("sample_index", ""),
+            "cache_hit": row.get("cache_hit", ""),
             "latency_ms": round(row["latency_ms"], 1),
+            "cost_usd": cost_by_response.get(row.get("response_id"), ""),
+            # Refactoring tasks only; blank elsewhere.
+            "structural_credited": (row.get("structural") or {}).get("credited", ""),
+            "structural_composite": (
+                (row.get("structural") or {}).get("structure", {}).get("composite", "")
+            ),
+            "structural_gamed": (row.get("structural") or {}).get("gaming", {}).get("gamed", ""),
+            "structural_reasons": " | ".join(explain_score(row.get("structural") or {})),
+            **{
+                f"structural_{axis}": (
+                    (row.get("structural") or {}).get("structure", {}).get("axes", {}).get(axis, "")
+                )
+                for axis in SCORE_WEIGHTS
+            },
             "evaluated_at": row["evaluated_at"],
         }
         for row in sorted(
@@ -288,6 +365,10 @@ def build_manifest(
                 // max(1, len(models) * len({(r["dataset"], r["problem_id"]) for r in evaluations}))
             ),
             "api_calls": len(cost_records),
+            "evaluations_not_executed": sum(
+                1 for r in evaluations if r.get("tests_executed") is not True
+            ),
+            "evaluations_from_cache": sum(1 for r in evaluations if r.get("cache_hit")),
         },
         "wall_clock": {
             "first_api_call": call_times[0] if call_times else None,
@@ -316,12 +397,16 @@ def build_manifest(
             for model in models
         },
         "sampling": {
-            "temperature": 0.0,
+            "temperature": {
+                model: (None if rejects_temperature(model) else 0.0) for model in models
+            },
             "seed": None,
             "note": (
-                "Sampling is greedy (temperature 0). No provider in this run "
-                "exposes a seed parameter, so decoding is not bit-reproducible "
-                "even at temperature 0. This is why each problem was run 3 times."
+                "Temperature 0 is requested where the provider accepts it. "
+                "Models whose API rejects a temperature (null above) run at "
+                "their default sampling. No provider exposes a seed, so no "
+                "model here is bit-reproducible; each problem is run 3 times "
+                "as independent samples."
             ),
         },
         "prompt_template_sha256": hash_prompt_templates(
@@ -357,32 +442,74 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 def build(out_dir: Path, results_dir: Path, db_path: Path, figures_dir: Path,
           run_name: str) -> dict[str, Any]:
     """Build the whole artifact into *out_dir* and return its manifest."""
-    evaluations = load_evaluations(results_dir)
+    evaluations, duplicates = last_per_sample(load_evaluations(results_dir))
     if not evaluations:
         raise SystemExit(f"no evaluations found under {results_dir}")
-    cost_records = load_cost_records(db_path)
+    # scripts/reexecute.py keeps the run's own rows beside the re-executed ones.
+    first_pass = load_evaluations(results_dir, FIRST_PASS_NAME)
+    if first_pass:
+        first_pass, duplicates = last_per_sample(first_pass)
+    all_costs = load_cost_records(db_path)
+    cost_records = records_for(evaluations, all_costs)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = build_manifest(run_name, evaluations, cost_records)
+    kept_responses = {r["response_id"] for r in cost_records}
+    duplicate_costs = [
+        r for r in records_for(duplicates, all_costs) if r["response_id"] not in kept_responses
+    ]
+    manifest["duplicates_dropped"] = {
+        "evaluations": len(duplicates),
+        "cost_usd": round(sum(r["total_cost_usd"] for r in duplicate_costs), 4),
+        "rule": "the last recorded row per (model, task, sample) is kept, because its "
+                "code is the one on disk; see last_per_sample",
+    }
+    if first_pass:
+        before = {r["evaluation_id"]: r["verdict"] for r in first_pass}
+        changed = Counter(
+            f"{r['dataset']}/{r['model_id']}: {before[r['evaluation_id']]} -> {r['verdict']}"
+            for r in evaluations
+            if r["evaluation_id"] in before and before[r["evaluation_id"]] != r["verdict"]
+        )
+        manifest["reexecuted"] = {
+            "evaluations": sum(1 for r in evaluations if r.get("reexecuted_at")),
+            "verdicts_changed": dict(sorted(changed.items())),
+            "why": "the run's host ran out of memory and containers killed mid-javac "
+                   "were recorded as compile errors; see scripts/reexecute.py",
+        }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     write_csv(out_dir / "summary.csv", summarise(evaluations, cost_records))
-    write_csv(out_dir / "evaluations.csv", flatten_evaluations(evaluations))
+    write_csv(out_dir / "evaluations.csv", flatten_evaluations(evaluations, cost_records))
 
+    # A figure drawn before the run's last evaluation cannot describe it.
+    run_finished = max(
+        datetime.fromisoformat(r["evaluated_at"]).replace(tzinfo=timezone.utc)
+        for r in evaluations
+    )
     figures_out = out_dir / "figures"
-    figures_out.mkdir(exist_ok=True)
     for name in PUBLISHED_FIGURES:
         source = figures_dir / name
-        if source.exists():
-            shutil.copy2(source, figures_out / name)
+        target = figures_out / name
+        drawn = (
+            datetime.fromtimestamp(source.stat().st_mtime, tz=timezone.utc)
+            if source.exists() else None
+        )
+        if drawn and drawn >= run_finished:
+            figures_out.mkdir(exist_ok=True)
+            shutil.copy2(source, target)
+        elif target.exists():
+            target.unlink()
+    if figures_out.exists() and not any(figures_out.iterdir()):
+        figures_out.rmdir()
 
     return manifest
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    parser.add_argument("--name", default="2026-05-run", help="Artifact directory name.")
+    parser.add_argument("--name", default="2026-10-run", help="Artifact directory name.")
     parser.add_argument("--results-dir", default="results", type=Path)
     parser.add_argument("--db", dest="db_path", default=None, type=Path,
                         help="Cost database. Defaults to LLM_SE_BENCH_CACHE_PATH.")
@@ -430,6 +557,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     if not manifest["cost_usd"]["total"]:
         print("  warning: no cost records found — cost columns will be empty")
+    unverified = manifest["counts"].get("evaluations_not_executed", 0)
+    if unverified:
+        print(
+            f"  warning: {unverified} evaluation(s) have no record of tests "
+            f"executing in Docker. Their passes are not evidence; do not "
+            f"publish them as results."
+        )
+        return 1
     return 0
 
 

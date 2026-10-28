@@ -7,6 +7,13 @@ checkable in the repository; see the provenance note at the end.*
 evidence, the voice is not yours yet. Read it aloud and rewrite the
 sentences that sound like someone else wrote them, because they were.*
 
+> **Out of date (2026-10-28).** The evidence below cites the May 2026 run,
+> whose pass rates are withdrawn (its costs stand). Before using this, swap
+> in the October run, `results/2026-10-run/`: code tasks do not separate
+> four models, the cheapest matching the most expensive at about 1/17th of
+> the cost; 82 of 84 God Class refactorings keep behaviour and 48 earn
+> structural credit.
+
 ---
 
 ## The problem

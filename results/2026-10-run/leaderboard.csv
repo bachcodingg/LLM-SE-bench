@@ -1,0 +1,5 @@
+model_id,behaviour_pass_rate,behaviour_ci95,behaviour_tasks,refactor_behaviour_preserved,refactor_behaviour_preserved_ci95,refactor_structure_credited,refactor_structure_credited_ci95,refactor_mean_composite,refactor_mean_composite_ci95,refactor_tasks,cost_usd_per_task,cost_usd_per_task_ci95,cost_usd_per_solve,evaluations
+claude-haiku-5-5,0.9608,"[0.902, 1.0]",51,1.0,"[1.0, 1.0]",0.5714,"[0.1429, 0.8571]",0.2141,"[0.0492, 0.3608]",7,0.000406,"[0.000252, 0.00058]",0.000444,174
+claude-sonnet-5-5,0.9542,"[0.8954, 1.0]",51,1.0,"[1.0, 1.0]",0.619,"[0.2857, 0.9048]",0.2291,"[0.0788, 0.3648]",7,0.006752,"[0.00458, 0.009256]",0.007389,174
+gpt-5.6-luna,0.9542,"[0.8954, 1.0]",51,0.9048,"[0.7143, 1.0]",0.5238,"[0.1905, 0.8571]",0.2255,"[0.0791, 0.3542]",7,0.000613,"[0.000416, 0.000838]",0.00068,174
+gpt-5.6-terra,0.9477,"[0.8824, 1.0]",51,1.0,"[1.0, 1.0]",0.5714,"[0.2381, 0.8571]",0.1941,"[0.0669, 0.3102]",7,0.004897,"[0.002987, 0.007191]",0.005427,174

@@ -20,6 +20,7 @@ from typing import Any
 from contracts import LLMResponse, Prompt
 from llm_gateway.adapters.openai import OpenAIAdapter
 from llm_gateway.clients.base import LLMClient, _new_id
+from llm_gateway.config import rejects_temperature, uses_max_completion_tokens
 from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
 logger = logging.getLogger(__name__)
@@ -81,12 +82,14 @@ class GPT4Client(LLMClient):
         messages.append({"role": "user", "content": prompt.user_message})
 
         logger.debug("GPT-4 API call: model=%s tokens=%d", prompt.model_id, prompt.max_tokens)
-        api_response = client.chat.completions.create(
-            model=prompt.model_id,
-            messages=messages,
-            temperature=prompt.temperature,
-            max_tokens=prompt.max_tokens,
-        )
+        params: dict[str, Any] = {"model": prompt.model_id, "messages": messages}
+        if uses_max_completion_tokens(prompt.model_id):
+            params["max_completion_tokens"] = prompt.max_tokens
+        else:
+            params["max_tokens"] = prompt.max_tokens
+        if not rejects_temperature(prompt.model_id):
+            params["temperature"] = prompt.temperature
+        api_response = client.chat.completions.create(**params)
 
         choice = api_response.choices[0]
         raw_text = choice.message.content or ""

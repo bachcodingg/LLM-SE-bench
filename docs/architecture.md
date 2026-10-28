@@ -52,7 +52,7 @@ Three things wrap every call:
 - **Rate limiter** (`rate_limiter.py`) — token bucket per provider.
 
 Prompts are Jinja2 templates in `llm_gateway/templates/`. They are inputs to
-the measurement, so `results/2026-05-run/manifest.json` records the SHA-256
+the measurement, so `results/2026-10-run/manifest.json` records the SHA-256
 of each one as it was at run time.
 
 ## C2 — Benchmark Engine (`bench/`)

@@ -7,6 +7,8 @@ Pages
 2.  **Deep Dive** — Per-model, per-criterion drill-down with bar charts.
 3.  **Decision Tool** — Interactive weight sliders → live matrix update.
 4.  **Cost Calculator** — Project-size cost projection tool.
+5.  **Trajectories** — Agent episode replay and diff.
+6.  **Refactoring** — Why a God Class refactoring was or was not credited.
 
 Launch
 ------
@@ -111,6 +113,7 @@ def create_app(
             dbc.NavItem(dbc.NavLink("Decision Tool", href="/decision-tool")),
             dbc.NavItem(dbc.NavLink("Cost Calculator", href="/cost-calculator")),
             dbc.NavItem(dbc.NavLink("Trajectories", href="/trajectories")),
+            dbc.NavItem(dbc.NavLink("Refactoring", href="/refactoring")),
         ],
     )
 
@@ -155,6 +158,15 @@ def create_app(
     except Exception as exc:  # noqa: BLE001 - a missing page must not be fatal
         logger.warning("Trajectory page unavailable: %s", exc)
 
+    try:
+        from framework.dashboard.pages.refactoring import (
+            register_callbacks as register_refactoring,
+        )
+
+        register_refactoring(app)
+    except Exception as exc:  # noqa: BLE001 - a missing page must not be fatal
+        logger.warning("Refactoring page unavailable: %s", exc)
+
     @app.callback(
         dash.Output("page-content", "children"),
         [dash.Input("url", "pathname")],
@@ -175,6 +187,10 @@ def create_app(
             from framework.dashboard.pages.trajectory import layout as trajectory_layout
 
             return trajectory_layout()
+        elif pathname == "/refactoring":
+            from framework.dashboard.pages.refactoring import layout as refactoring_layout
+
+            return refactoring_layout()
         return overview_layout()
 
     return app

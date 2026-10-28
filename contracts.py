@@ -176,6 +176,21 @@ class EvaluationResult(BaseModel):
     weighted_score: float = Field(default=0.0, ge=0.0, le=1.0, description="0-1 normalised.")
     results: list[VerificationResult] = Field(default_factory=list)
     compile_success: bool = Field(default=True)
+    tests_executed: bool = Field(
+        default=False,
+        description="True only when javac and JUnit actually ran in the sandbox. "
+                    "False for the structural fallback, whose passes are not evidence.",
+    )
+    sample_index: int = Field(default=1, ge=1, description="Which of the N runs this is.")
+    cache_hit: bool = Field(
+        default=False,
+        description="True when the response was served from the response cache "
+                    "rather than sampled for this evaluation.",
+    )
+    structural: dict[str, Any] = Field(
+        default_factory=dict,
+        description="quality.structural score for refactoring tasks; empty otherwise.",
+    )
     runtime_errors: list[str] = Field(default_factory=list)
     latency_ms: float = Field(default=0.0, ge=0.0, description="LLM wall-clock latency in ms.")
     evaluated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -34,6 +34,7 @@ def _load(name: str):
 
 regression_gate = _load("regression_gate")
 project_status = _load("project_status")
+build_run_artifact = _load("build_run_artifact")
 
 
 def _write_summary(directory: Path, rows: list[dict[str, object]]) -> Path:
@@ -205,12 +206,89 @@ class TestPromptDrift:
 
     def test_the_committed_baseline_matches_the_current_templates(self):
         """The repository's own published numbers are still valid."""
-        result = regression_gate.check_prompt_drift(REPO_ROOT / "results" / "2026-05-run")
+        result = regression_gate.check_prompt_drift(REPO_ROOT / "results" / "2026-10-run")
         assert result["passed"] is True, result
 
     def test_fingerprints_cover_every_template(self):
         templates = list((REPO_ROOT / "llm_gateway" / "templates").glob("*.j2"))
         assert len(regression_gate.prompt_fingerprints()) == len(templates)
+
+
+class TestLastPerSample:
+    @staticmethod
+    def _row(verdict, recorded_at, sample=1, model="m"):
+        return {
+            "dataset": "godclass", "model_id": model, "problem_id": "GC_001",
+            "sample_index": sample, "verdict": verdict,
+            "recorded_at": recorded_at, "evaluated_at": recorded_at,
+        }
+
+    @pytest.mark.parametrize("later_verdict", ["pass", "fail"])
+    def test_the_last_recorded_row_is_kept_whatever_its_verdict(self, later_verdict):
+        earlier = self._row("partial", "2026-10-27T14:10:01")
+        later = self._row(later_verdict, "2026-10-27T14:10:05")
+        kept, dropped = build_run_artifact.last_per_sample([later, earlier])
+        assert kept == [later]
+        assert dropped == [earlier]
+
+    def test_distinct_samples_and_models_are_not_duplicates(self):
+        rows = [
+            self._row("pass", "t1", sample=1),
+            self._row("pass", "t2", sample=2),
+            self._row("pass", "t3", sample=1, model="other"),
+        ]
+        kept, dropped = build_run_artifact.last_per_sample(rows)
+        assert len(kept) == 3 and dropped == []
+
+    def test_set_aside_directories_are_not_loaded(self, tmp_path):
+        row = {"problem_id": "P", "verdict": "pass"}
+        for dataset in ("humaneval-java", "_excluded"):
+            path = tmp_path / dataset / "m" / "results.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        loaded = build_run_artifact.load_evaluations(tmp_path)
+        assert [r["dataset"] for r in loaded] == ["humaneval-java"]
+
+
+class TestReexecute:
+    """Re-scoring a recorded response changes the verdict, never its identity."""
+
+    def test_a_killed_compile_is_rescored_and_identity_is_kept(self):
+        from bench.datasets.mbpp import MBPPDataset
+        from bench.orchestrator import BenchmarkOrchestrator, RunConfig
+        from bench.sandbox.docker_sandbox import SandboxResult
+
+        reexecute = _load("reexecute")
+
+        class HealthySandbox:
+            def run(self, source_code, junit_code, problem_id):
+                return SandboxResult(
+                    problem_id=problem_id, compiled=True, executed=True,
+                    tests_passed=3, tests_total=3,
+                )
+
+        dataset = MBPPDataset(data_dir=str(REPO_ROOT / "data"))
+        dataset.load_problems()
+        problem_id = dataset.list_problem_ids()[0]
+        orchestrator = BenchmarkOrchestrator(dataset, {}, HealthySandbox(), RunConfig())
+        recorded = {
+            "evaluation_id": "eval-original", "response_id": "resp-1",
+            "problem_id": problem_id, "model_id": "m", "sample_index": 2,
+            "cache_hit": False, "latency_ms": 1234.0, "verdict": "error",
+            "recorded_at": "2026-10-27T14:00:00",
+        }
+        cached = {
+            "response_id": "resp-1", "prompt_id": "p", "model_id": "m",
+            "raw_text": "public class X {}", "extracted_code": "public class X {}",
+        }
+        fresh = reexecute.reexecute_row(orchestrator, recorded, cached)
+        assert fresh["verdict"] == "pass"
+        assert fresh["tests_executed"] is True
+        assert fresh["evaluation_id"] == "eval-original"
+        assert fresh["response_id"] == "resp-1"
+        assert fresh["sample_index"] == 2
+        assert fresh["latency_ms"] == 1234.0
+        assert "reexecuted_at" in fresh
 
 
 class TestGateRendering:
@@ -262,7 +340,9 @@ class TestProjectStatus:
     def test_publication_checks_have_the_expected_shape(self):
         checks = project_status.publication_checks()
         names = {check["check"] for check in checks}
-        assert names == {"published", "placeholders", "run_artifact", "demo_gif"}
+        assert names == {
+            "published", "placeholders", "run_artifact", "run_executed", "demo_gif",
+        }
         assert all("detail" in check for check in checks)
 
     def test_the_gif_check_is_not_blocking(self):

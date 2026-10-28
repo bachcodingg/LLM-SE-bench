@@ -1,6 +1,8 @@
 # Cost model
 
-The published run cost **$3.52** for 672 API calls. This page explains how
+The May 2026 run cost **$3.52** for 672 API calls. (Its pass rates are
+withdrawn; its costs were recorded per call and stand. The October 2026 run
+cost $2.20 for 696 calls: [`results/2026-10-run/`](../results/2026-10-run/).) This page explains how
 that number is produced, why it is trustworthy, and where it is soft.
 
 ## Cost is recorded, not estimated

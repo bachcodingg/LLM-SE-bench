@@ -21,7 +21,7 @@ from bench.orchestrator import (
     RunConfig,
 )
 from bench.progress import ProgressTracker
-from bench.sandbox.docker_sandbox import DockerSandbox
+from bench.sandbox.docker_sandbox import DockerSandbox, SandboxResult
 from contracts import (
     EvaluationResult,
     LLMResponse,
@@ -297,6 +297,7 @@ class TestBenchmarkOrchestrator:
             runs_per_problem=3,
             max_concurrency=1,
             results_dir=tmp_results,
+            dry_run=True,
         )
         orch = BenchmarkOrchestrator(
             dataset=humaneval,
@@ -324,6 +325,7 @@ class TestBenchmarkOrchestrator:
             runs_per_problem=1,
             max_concurrency=1,
             results_dir=tmp_results,
+            dry_run=True,
         )
         orch = BenchmarkOrchestrator(
             dataset=humaneval,
@@ -356,6 +358,7 @@ class TestBenchmarkOrchestrator:
             max_retries=1,
             retry_delay_seconds=0,
             results_dir=tmp_results,
+            dry_run=True,
         )
         orch = BenchmarkOrchestrator(
             dataset=humaneval,
@@ -377,6 +380,7 @@ class TestBenchmarkOrchestrator:
             runs_per_problem=1,
             max_concurrency=3,
             results_dir=tmp_results,
+            dry_run=True,
         )
         orch = BenchmarkOrchestrator(
             dataset=humaneval,
@@ -406,6 +410,7 @@ class TestOrchestratorWithAllDatasets:
             runs_per_problem=1,
             max_concurrency=1,
             results_dir=tmp_results,
+            dry_run=True,
         )
         orch = BenchmarkOrchestrator(
             dataset=dataset,
@@ -442,3 +447,170 @@ class TestOrchestratorWithAllDatasets:
         ds = GodClassDataset(data_dir=tmp_path / "no_data")
         stats = self._run_dataset(ds, setup_clients, sandbox, tmp_path / "results")
         assert stats["total_evaluations"] == 3
+
+
+# ======================================================================
+# Unexecuted tests are never a pass
+# ======================================================================
+
+class TestExecutionIsRequired:
+    """The May 2026 run published structural-fallback passes as results.
+
+    These pin the guards that stop that happening again.
+    """
+
+    def _orchestrator(self, dataset, sandbox, tmp_results: Path, dry_run: bool):
+        return BenchmarkOrchestrator(
+            dataset=dataset,
+            llm_clients={"test-model": MockLLMClient(latency_ms=0)},
+            sandbox=sandbox,
+            config=RunConfig(
+                models=["test-model"], runs_per_problem=1, max_concurrency=1,
+                results_dir=tmp_results, dry_run=dry_run,
+            ),
+        )
+
+    def _all_passed(self, executed: bool) -> SandboxResult:
+        return SandboxResult(
+            problem_id="p", compiled=True, tests_passed=3, tests_total=3,
+            executed=executed,
+        )
+
+    def _response(self) -> LLMResponse:
+        return LLMResponse(
+            response_id="r", prompt_id="p", model_id="test-model", raw_text="",
+        )
+
+    def test_a_real_run_refuses_to_start_without_docker(
+        self, humaneval, sandbox, tmp_results: Path,
+    ):
+        orch = self._orchestrator(humaneval, sandbox, tmp_results, dry_run=False)
+        with pytest.raises(RuntimeError, match="Docker is unavailable"):
+            orch.run_all()
+
+    def test_an_unexecuted_pass_is_recorded_as_an_error(
+        self, humaneval, sandbox, tmp_results: Path,
+    ):
+        orch = self._orchestrator(humaneval, sandbox, tmp_results, dry_run=False)
+        pid = humaneval.list_problem_ids()[0]
+        result = orch._build_evaluation_result(
+            problem_id=pid, model_id="test-model", run_id=1,
+            response=self._response(), suite=humaneval.get_test_suite(pid),
+            sandbox_result=self._all_passed(executed=False),
+        )
+        assert result.verdict == Verdict.ERROR
+        assert result.tests_executed is False
+        assert result.weighted_score == 0.0
+
+    def test_an_executed_pass_is_a_pass(
+        self, humaneval, sandbox, tmp_results: Path,
+    ):
+        orch = self._orchestrator(humaneval, sandbox, tmp_results, dry_run=False)
+        pid = humaneval.list_problem_ids()[0]
+        result = orch._build_evaluation_result(
+            problem_id=pid, model_id="test-model", run_id=2,
+            response=self._response(), suite=humaneval.get_test_suite(pid),
+            sandbox_result=self._all_passed(executed=True),
+        )
+        assert result.verdict == Verdict.PASS
+        assert result.tests_executed is True
+        assert result.sample_index == 2
+
+    def test_runs_carry_their_sample_index_into_the_prompt(
+        self, orchestrator: BenchmarkOrchestrator,
+    ):
+        seen: list[int] = []
+        client = orchestrator.llm_clients["test-model"]
+        original = client.send_prompt
+
+        def spy(prompt: Prompt) -> LLMResponse:
+            seen.append(prompt.metadata["sample_index"])
+            return original(prompt)
+
+        client.send_prompt = spy  # type: ignore[method-assign]
+        pid = orchestrator.dataset.list_problem_ids()[0]
+        for run_id in (1, 2, 3):
+            orchestrator.run_single(pid, "test-model", run_id)
+        assert seen == [1, 2, 3]
+
+
+class TestRefactoringNeedsStructure:
+
+    def test_an_unchanged_god_class_is_not_a_pass(
+        self, sandbox, tmp_results: Path, tmp_path: Path,
+    ):
+        """Behaviour tests pass on the original. That is not a refactoring."""
+        dataset = GodClassDataset(data_dir=tmp_path / "no_data")
+        orch = BenchmarkOrchestrator(
+            dataset=dataset,
+            llm_clients={"test-model": MockLLMClient(latency_ms=0)},
+            sandbox=sandbox,
+            config=RunConfig(models=["test-model"], results_dir=tmp_results),
+        )
+        pid = dataset.list_problem_ids()[0]
+        result = orch._build_evaluation_result(
+            problem_id=pid, model_id="test-model", run_id=1,
+            response=LLMResponse(
+                response_id="r", prompt_id="p", model_id="test-model", raw_text="",
+            ),
+            suite=dataset.get_test_suite(pid),
+            sandbox_result=SandboxResult(
+                problem_id=pid, compiled=True, tests_passed=3, tests_total=3,
+                executed=True,
+            ),
+            code=dataset.get_original_code(pid),
+        )
+        assert result.verdict == Verdict.PARTIAL
+        assert result.structural["credited"] is False
+
+    def test_god_class_suites_assert_behaviour(self, tmp_path: Path):
+        """No suite may contain an assertion that cannot fail."""
+        import re
+
+        for data_dir in (tmp_path / "no_data", Path("data")):
+            dataset = GodClassDataset(data_dir=data_dir)
+            for pid in dataset.list_problem_ids():
+                junit = dataset.get_junit_code(pid)
+                assert not re.search(r"assertTrue\([^;]*,\s*true\)", junit), pid
+                assert dataset.get_problem(pid).metadata["entry_point"] in junit, pid
+
+
+class TestResume:
+    """A run stopped part-way must resume, not re-record what it finished."""
+
+    def _orchestrator(self, dataset, sandbox, tmp_results: Path):
+        return BenchmarkOrchestrator(
+            dataset=dataset,
+            llm_clients={"test-model": MockLLMClient(latency_ms=0)},
+            sandbox=sandbox,
+            config=RunConfig(
+                models=["test-model"], runs_per_problem=2, max_concurrency=1,
+                results_dir=tmp_results, dry_run=True,
+            ),
+        )
+
+    def _results(self, dataset, tmp_results: Path) -> Path:
+        return tmp_results / dataset.name / "test-model" / "results.jsonl"
+
+    def test_recorded_samples_are_skipped_on_restart(
+        self, humaneval, sandbox, tmp_results: Path,
+    ):
+        pid = humaneval.list_problem_ids()[0]
+        first = self._orchestrator(humaneval, sandbox, tmp_results)
+        first.run_single(pid, "test-model", 1)
+        lines_before = self._results(humaneval, tmp_results).read_text().count("\n")
+
+        second = self._orchestrator(humaneval, sandbox, tmp_results)
+        assert second.resume_from_results() == 1
+        second.run_single(pid, "test-model", 1)   # already recorded: skipped
+        second.run_single(pid, "test-model", 2)   # new sample: recorded
+        assert self._results(humaneval, tmp_results).read_text().count("\n") == lines_before + 1
+
+    def test_a_partial_last_line_is_dropped(self, humaneval, sandbox, tmp_results: Path):
+        pid = humaneval.list_problem_ids()[0]
+        self._orchestrator(humaneval, sandbox, tmp_results).run_single(pid, "test-model", 1)
+        path = self._results(humaneval, tmp_results)
+        path.write_text(path.read_text() + '{"problem_id": "trunc', encoding="utf-8")
+
+        assert self._orchestrator(humaneval, sandbox, tmp_results).resume_from_results() == 1
+        assert path.read_text().endswith("\n")

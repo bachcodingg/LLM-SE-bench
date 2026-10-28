@@ -23,6 +23,7 @@ from contracts import (
     TestSuite,
     VerificationResult,
 )
+from quality.structural import StructuralScore, score_structure
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,38 @@ _EXAMPLE_CLASSES: list[dict[str, Any]] = [
             "        createShippingLabel(order);\n"
             "        processedOrders.add(order);\n"
             "        return true;\n"
+            "    }\n\n"
+            "    public void addStock(String sku, int quantity) {\n"
+            "        inventory.merge(sku, quantity, Integer::sum);\n"
+            "    }\n\n"
+            "    public double getTotalRevenue() { return totalRevenue; }\n"
+            "    public int getProcessedOrderCount() { return processedOrders.size(); }\n\n"
+            "    public static class Item {\n"
+            "        private final String sku;\n"
+            "        private final int quantity;\n"
+            "        public Item(String sku, int quantity) { this.sku = sku; this.quantity = quantity; }\n"
+            "        public String getSku() { return sku; }\n"
+            "        public int getQuantity() { return quantity; }\n"
+            "    }\n\n"
+            "    public static class Order {\n"
+            "        private final String id, customerId, customerEmail;\n"
+            "        private final List<Item> items;\n"
+            "        private final double total;\n"
+            "        public Order(String id, String customerId, String customerEmail,\n"
+            "                     List<Item> items, double total) {\n"
+            "            this.id = id; this.customerId = customerId;\n"
+            "            this.customerEmail = customerEmail; this.items = items; this.total = total;\n"
+            "        }\n"
+            "        public String getId() { return id; }\n"
+            "        public String getCustomerId() { return customerId; }\n"
+            "        public String getCustomerEmail() { return customerEmail; }\n"
+            "        public List<Item> getItems() { return items; }\n"
+            "        public double getTotal() { return total; }\n"
+            "    }\n\n"
+            "    public static class PaymentDetails {\n"
+            "        private final double amount;\n"
+            "        public PaymentDetails(double amount) { this.amount = amount; }\n"
+            "        public double getAmount() { return amount; }\n"
             "    }\n"
             "}\n"
         ),
@@ -170,25 +203,46 @@ _EXAMPLE_CLASSES: list[dict[str, Any]] = [
                 "timeout_seconds": 30.0,
             },
         ],
+        # Behaviour only. Structure is scored separately by
+        # quality.structural via GodClassDataset.score_refactoring.
         "junit_code": (
+            "import java.util.*;\n"
             "import org.junit.Test;\n"
             "import static org.junit.Assert.*;\n\n"
             "public class OrderProcessorRefactorTest {\n"
-            "    @Test\n"
-            "    public void testMultipleClassesExist() {\n"
-            "        // Structural check: at least 3 classes in output\n"
-            "        // This is validated by the sandbox CK metrics checker\n"
-            "        assertTrue(\"Refactoring should produce >= 3 classes\", true);\n"
+            "    private static OrderProcessor.Order order(String id, double total,\n"
+            "                                              OrderProcessor.Item... items) {\n"
+            "        return new OrderProcessor.Order(id, \"cust-1\", \"c@example.com\",\n"
+            "                                        Arrays.asList(items), total);\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testReducedComplexity() {\n"
-            "        // CK metrics check: no single class WMC > 15\n"
-            "        assertTrue(\"Each class WMC should be <= 15\", true);\n"
+            "    public void validationRejectsIncompleteOrders() {\n"
+            "        OrderProcessor p = new OrderProcessor();\n"
+            "        assertFalse(p.validateOrder(null));\n"
+            "        assertFalse(p.validateOrder(order(\"o1\", 10.0)));\n"
+            "        assertFalse(p.validateOrder(new OrderProcessor.Order(\"o2\", null, \"c@example.com\",\n"
+            "            Arrays.asList(new OrderProcessor.Item(\"A\", 1)), 10.0)));\n"
+            "        assertTrue(p.validateOrder(order(\"o3\", 10.0, new OrderProcessor.Item(\"A\", 1))));\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testCompiles() {\n"
-            "        // Compilation check done by sandbox\n"
-            "        assertTrue(\"All classes should compile\", true);\n"
+            "    public void orderNeedsStockAndFullPayment() {\n"
+            "        OrderProcessor p = new OrderProcessor();\n"
+            "        OrderProcessor.Order o = order(\"o1\", 50.0, new OrderProcessor.Item(\"A\", 2));\n"
+            "        assertFalse(\"no stock yet\", p.processOrder(o, new OrderProcessor.PaymentDetails(50.0)));\n"
+            "        p.addStock(\"A\", 2);\n"
+            "        assertFalse(\"underpaid\", p.processOrder(o, new OrderProcessor.PaymentDetails(49.99)));\n"
+            "        assertEquals(0.0, p.getTotalRevenue(), 1e-9);\n"
+            "        assertTrue(p.processOrder(o, new OrderProcessor.PaymentDetails(50.0)));\n"
+            "        assertEquals(50.0, p.getTotalRevenue(), 1e-9);\n"
+            "        assertEquals(1, p.getProcessedOrderCount());\n"
+            "        assertFalse(\"stock was reserved\",\n"
+            "            p.checkInventory(order(\"o2\", 1.0, new OrderProcessor.Item(\"A\", 1))));\n"
+            "    }\n\n"
+            "    @Test\n"
+            "    public void shippingLabelNamesTheOrder() {\n"
+            "        String label = new OrderProcessor().createShippingLabel(\n"
+            "            order(\"o9\", 1.0, new OrderProcessor.Item(\"A\", 1)));\n"
+            "        assertTrue(label, label.startsWith(\"SHIP-o9-\"));\n"
             "    }\n"
             "}\n"
         ),
@@ -303,16 +357,34 @@ _EXAMPLE_CLASSES: list[dict[str, Any]] = [
             "import static org.junit.Assert.*;\n\n"
             "public class UserManagerRefactorTest {\n"
             "    @Test\n"
-            "    public void testDecomposition() {\n"
-            "        assertTrue(\"Should produce >= 2 classes\", true);\n"
+            "    public void registrationRejectsDuplicates() {\n"
+            "        UserManager m = new UserManager();\n"
+            "        assertTrue(m.register(\"ann\", \"pw1\"));\n"
+            "        assertFalse(m.register(\"ann\", \"other\"));\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testAuthSeparated() {\n"
-            "        assertTrue(\"Auth logic should be in separate class\", true);\n"
+            "    public void loginNeedsTheRightPassword() {\n"
+            "        UserManager m = new UserManager();\n"
+            "        m.register(\"ann\", \"pw1\");\n"
+            "        assertNull(m.login(\"ann\", \"wrong\"));\n"
+            "        assertNull(m.login(\"bob\", \"pw1\"));\n"
+            "        assertEquals(\"tok-\" + \"ann\".hashCode(), m.login(\"ann\", \"pw1\"));\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testCompiles() {\n"
-            "        assertTrue(\"All classes should compile\", true);\n"
+            "    public void rolesArePerUser() {\n"
+            "        UserManager m = new UserManager();\n"
+            "        assertFalse(m.hasRole(\"ann\", \"admin\"));\n"
+            "        m.assignRole(\"ann\", \"admin\");\n"
+            "        assertTrue(m.hasRole(\"ann\", \"admin\"));\n"
+            "        assertFalse(m.hasRole(\"bob\", \"admin\"));\n"
+            "    }\n\n"
+            "    @Test\n"
+            "    public void logoutOfAnUnknownTokenIsHarmless() {\n"
+            "        UserManager m = new UserManager();\n"
+            "        m.logout(\"no-such-token\");\n"
+            "        m.register(\"ann\", \"pw1\");\n"
+            "        m.logout(m.login(\"ann\", \"pw1\"));\n"
+            "        assertNotNull(m.login(\"ann\", \"pw1\"));\n"
             "    }\n"
             "}\n"
         ),
@@ -440,20 +512,37 @@ _EXAMPLE_CLASSES: list[dict[str, Any]] = [
             },
         ],
         "junit_code": (
+            "import java.util.*;\n"
             "import org.junit.Test;\n"
             "import static org.junit.Assert.*;\n\n"
             "public class ReportGeneratorRefactorTest {\n"
+            "    private final ReportGenerator g = new ReportGenerator(\"jdbc:none\");\n\n"
             "    @Test\n"
-            "    public void testDecomposition() {\n"
-            "        assertTrue(\"Should produce >= 3 classes\", true);\n"
+            "    public void meanAndMedian() {\n"
+            "        assertEquals(3.0, g.calculateMean(Arrays.asList(1.0, 2.0, 6.0)), 1e-9);\n"
+            "        assertEquals(0.0, g.calculateMean(new ArrayList<Double>()), 1e-9);\n"
+            "        assertEquals(2.0, g.calculateMedian(new ArrayList<>(Arrays.asList(3.0, 1.0, 2.0))), 1e-9);\n"
+            "        assertEquals(2.5, g.calculateMedian(new ArrayList<>(Arrays.asList(4.0, 1.0, 3.0, 2.0))), 1e-9);\n"
+            "        assertEquals(0.0, g.calculateMedian(new ArrayList<Double>()), 1e-9);\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testReducedWMC() {\n"
-            "        assertTrue(\"Each class WMC should be <= 12\", true);\n"
+            "    public void formatting() {\n"
+            "        Map<String, Double> stats = new LinkedHashMap<>();\n"
+            "        stats.put(\"mean\", 1.5);\n"
+            "        stats.put(\"max\", 3.0);\n"
+            "        assertEquals(\"mean,1.5\\nmax,3.0\\n\", g.generateCsv(stats));\n"
+            "        assertEquals(\"<html><body>\" + stats + \"</body></html>\", g.generateHtml(stats));\n"
             "    }\n\n"
             "    @Test\n"
-            "    public void testCompiles() {\n"
-            "        assertTrue(\"All classes should compile\", true);\n"
+            "    public void cacheRoundTrip() {\n"
+            "        byte[] data = {1, 2, 3};\n"
+            "        g.cacheResult(\"k\", data);\n"
+            "        assertArrayEquals(data, g.getCached(\"k\"));\n"
+            "        assertNull(g.getCached(\"missing\"));\n"
+            "    }\n\n"
+            "    @Test\n"
+            "    public void queryReturnsNoRowsWithoutADatabase() {\n"
+            "        assertTrue(g.queryData(\"SELECT 1\").isEmpty());\n"
             "    }\n"
             "}\n"
         ),
@@ -509,6 +598,7 @@ class GodClassDataset(Dataset):
         problem = self.get_problem(problem_id)
         original = self.get_original_code(problem_id)
         meta = problem.metadata
+        entry = meta.get("entry_point", problem.title)
 
         metrics_info = (
             f"Baseline CK Metrics:\n"
@@ -534,11 +624,35 @@ class GodClassDataset(Dataset):
             f"1. Decompose into multiple smaller, focused classes\n"
             f"2. Each resulting class should have a single responsibility\n"
             f"3. Maintain all existing functionality\n"
-            f"4. Reduce WMC and CBO metrics for each class\n\n"
+            f"4. Reduce WMC and CBO metrics for each class\n"
+            f"5. Keep `public class {entry}` with every public constructor, "
+            f"method and nested public type it has now, with the same "
+            f"signatures and behaviour. It may delegate to the new classes. "
+            f"A hidden JUnit suite calls this API.\n"
+            f"6. Everything goes in one file: `{entry}` is the only public "
+            f"top-level class; the new classes are package-private.\n\n"
             f"Output the complete refactored Java source code inside a single "
             f"```java ... ``` block. No prose before or after.\n"
         )
         return prompt
+
+    def score_refactoring(
+        self,
+        problem_id: str,
+        generated_code: str,
+        tests_pass: bool | None = None,
+    ) -> StructuralScore:
+        """Score a decomposition on structure, not just on its tests.
+
+        A refactoring that changes nothing passes every behaviour test, so
+        the orchestrator only credits a pass when this score is credited:
+        behaviour preserved, no gaming, and a positive CK composite.
+        """
+        return score_structure(
+            self.get_original_code(problem_id),
+            [generated_code],
+            tests_pass=tests_pass,
+        )
 
     def verify_solution(
         self,

@@ -18,6 +18,8 @@ seven God Class tasks, 82 of 84 refactorings keep the original behaviour
 `GC_004` and `GC_007`, were never credited for any model in any sample. A
 pass/fail harness would have scored nearly all of them as solved.
 
+The full write-up is the research report, [`docs/report.md`](docs/report.md).
+
 October 2026: 58 Java tasks, 3 independent samples each, 4 models, 696
 evaluations, every one compiled and run under `javac` and JUnit in Docker.
 $2.20 in total. Full artifact in [`results/2026-10-run/`](results/2026-10-run/).

@@ -1,6 +1,7 @@
 # Documentation
 
-Eleven pages. Start with whichever question you arrived with.
+Start with whichever question you arrived with. For the whole project in one
+place, read [`report.md`](report.md).
 
 ## Using it
 
@@ -16,6 +17,7 @@ Eleven pages. Start with whichever question you arrived with.
 
 | | |
 |---|---|
+| [`report.md`](report.md) | The research report: design, results of the October 2026 run, how the measurement was validated, threats to validity, references. |
 | [`architecture.md`](architecture.md) | Five components, one contract module, one direction of dependency — and why the layout is flat rather than `src/`. |
 | [`methodology.md`](methodology.md) | How a task is defined and scored, which statistics are used and why, what the published run actually found, and ten limitations. |
 | [`v2.md`](v2.md) | Where this is going: the three research gaps, the module breakdown, and what is deliberately absent. |

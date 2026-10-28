@@ -10,6 +10,8 @@ rather than behaviour:
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from bench.sandbox.docker_sandbox import DockerSandbox
@@ -24,6 +26,17 @@ from mcp_servers.tools.bench import (
 )
 
 DATASETS = sorted(DATASET_CATEGORY)
+
+
+def _sandbox_ready() -> bool:
+    """A reachable Docker daemon *and* the sandbox image (CI has only the first)."""
+    sandbox = DockerSandbox()
+    if not sandbox.is_docker_available():
+        return False
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", sandbox.docker_image], capture_output=True,
+    )
+    return inspect.returncode == 0
 
 
 @pytest.fixture(scope="module")
@@ -167,8 +180,9 @@ public class HasCloseElements {
         assert result.metrics["wmc"] >= 1
 
     @pytest.mark.skipif(
-        not DockerSandbox().is_docker_available(),
-        reason="needs Docker: without it the tests are not executed, which is an error",
+        not _sandbox_ready(),
+        reason="needs Docker and the sandbox image: without them the tests are "
+               "not executed, which is an error",
     )
     def test_an_unchanged_god_class_is_not_a_pass(self):
         """Its tests pass. That is the point: tests cannot tell it apart."""

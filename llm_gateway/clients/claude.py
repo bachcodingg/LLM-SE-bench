@@ -20,6 +20,7 @@ from typing import Any
 from contracts import LLMResponse, Prompt
 from llm_gateway.adapters.anthropic import AnthropicAdapter
 from llm_gateway.clients.base import LLMClient, _new_id
+from llm_gateway.config import rejects_temperature
 from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,9 @@ class ClaudeClient(LLMClient):
             "model": prompt.model_id,
             "messages": messages,
             "max_tokens": prompt.max_tokens,
-            "temperature": prompt.temperature,
         }
+        if not rejects_temperature(prompt.model_id):
+            kwargs["temperature"] = prompt.temperature
         if prompt.system_message:
             kwargs["system"] = prompt.system_message
 

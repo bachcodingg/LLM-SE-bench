@@ -80,7 +80,7 @@ will not build. Repository-level builds are a separate problem — the one
 |---|---|
 | `list_tasks(category, dataset, difficulty, limit)` | Filtered task list. No code. |
 | `get_task(task_id)` | `{prompt, repo_state, test_spec, metadata}`. **Never the reference solution.** |
-| `evaluate_patch(task_id, patch)` | Scores a candidate. Costs nothing. |
+| `evaluate_patch(task_id, patch)` | Scores a candidate. Costs nothing. On a refactoring task it also returns the structural score and, when it is not credited, the reasons. |
 | `run_benchmark(model, task_set, budget_eur, dry_run, ...)` | **Can spend money.** Defaults to `dry_run=true`. |
 | `get_run_results(run_id)` | Reads a run back. |
 
@@ -145,8 +145,9 @@ is refused rather than started and aborted. A model with no measured cost
 history is assumed to be as expensive as the most expensive measured one, so
 the check fails safe.
 
-The projection is per-evaluation cost measured in `results/2026-05-run`. It
-is an estimate, not a guarantee, and a task mix heavier than that run's will
+The projection is per-evaluation cost measured in `results/2026-05-run` and
+`results/2026-10-run`. It is an estimate, not a guarantee, and a task mix
+heavier than those runs' will
 overshoot it. This is a pre-flight check, not a mid-run abort — adequate for
 single-shot evaluation, where per-call cost is bounded and predictable. It
 would not be adequate for an agent loop, where episodes run 10–100× more

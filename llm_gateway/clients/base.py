@@ -10,6 +10,7 @@ rate limiting, caching, cost tracking, audit logging, and code extraction.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import uuid
@@ -134,6 +135,14 @@ class LLMClient(ABC):
         prompt_hash = PromptRenderer.hash_prompt(
             prompt.system_message, prompt.user_message
         )
+        # Repeated samples of one prompt must not share a cache entry, or
+        # run 2 of 3 is run 1 read back. Sample 1 keeps the bare hash so
+        # existing cache entries stay valid.
+        sample_index = int(prompt.metadata.get("sample_index", 1))
+        if sample_index > 1:
+            prompt_hash = hashlib.sha256(
+                f"{prompt_hash}#sample={sample_index}".encode("utf-8")
+            ).hexdigest()
         if self.cache:
             cached = self.cache.get(prompt_hash, prompt.model_id)
             if cached is not None:

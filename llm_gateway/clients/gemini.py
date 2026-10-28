@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from contracts import LLMResponse, Prompt
-from llm_gateway.adapters.gemini import GeminiAdapter
+from llm_gateway.adapters.gemini import GeminiAdapter, output_token_count
 from llm_gateway.clients.base import LLMClient, _new_id
 from llm_gateway.conversation import AssistantTurn, Conversation, ToolSchema
 
@@ -101,7 +101,12 @@ class GeminiClient(LLMClient):
             generation_config=generation_config,
         )
 
-        raw_text = api_response.text or ""
+        # The quick accessor raises when no text part came back, which is
+        # what happens when thinking used the whole output budget.
+        try:
+            raw_text = api_response.text or ""
+        except ValueError:
+            raw_text = ""
 
         # Token counts via usage_metadata (may be None on some SDK versions).
         prompt_tokens = 0
@@ -109,7 +114,11 @@ class GeminiClient(LLMClient):
         if hasattr(api_response, "usage_metadata") and api_response.usage_metadata:
             meta = api_response.usage_metadata
             prompt_tokens = getattr(meta, "prompt_token_count", 0) or 0
-            completion_tokens = getattr(meta, "candidates_token_count", 0) or 0
+            # Thinking tokens are billed as output; leaving them out
+            # understates the cost of every thinking model.
+            # This SDK does not always expose thoughts_token_count, so the
+            # total is used as the floor.
+            completion_tokens = output_token_count(meta, prompt_tokens)
 
         # Finish reason mapping.
         finish_reason = "stop"

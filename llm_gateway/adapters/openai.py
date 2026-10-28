@@ -24,6 +24,7 @@ import json
 from typing import Any
 
 from llm_gateway.adapters import ProviderAdapter
+from llm_gateway.config import rejects_temperature, uses_max_completion_tokens
 from llm_gateway.conversation import (
     AssistantTurn,
     Conversation,
@@ -118,9 +119,14 @@ class OpenAIAdapter(ProviderAdapter):
         request: dict[str, Any] = {
             "model": model_id,
             "messages": self.encode_conversation(conversation),
-            "max_tokens": max_tokens,
-            "temperature": temperature,
         }
+        # GPT-5 models renamed the token ceiling and reject a temperature.
+        if uses_max_completion_tokens(model_id):
+            request["max_completion_tokens"] = max_tokens
+        else:
+            request["max_tokens"] = max_tokens
+        if not rejects_temperature(model_id):
+            request["temperature"] = temperature
         if tools:
             request["tools"] = self.encode_tools(tools)
             request["tool_choice"] = "auto"

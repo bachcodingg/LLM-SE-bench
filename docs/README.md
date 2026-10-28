@@ -6,10 +6,11 @@ Eleven pages. Start with whichever question you arrived with.
 
 | | |
 |---|---|
-| [`reproducing.md`](reproducing.md) | The exact commands that produced `results/2026-05-run`, and an honest account of what will not reproduce exactly. |
-| [`cost.md`](cost.md) | Where the $3.52 came from, how caching and rate limiting work, and what the budget controls do and do not cover. |
+| [`reproducing.md`](reproducing.md) | The exact commands that produced `results/2026-10-run`, how it was re-executed after the host ran out of memory, and what will not reproduce exactly. |
+| [`cost.md`](cost.md) | Where the May run's $3.52 came from, how caching and rate limiting work, and what the budget controls do and do not cover. |
 | [`mcp.md`](mcp.md) | The three MCP servers, their twelve tools, and a config snippet to drop into a client. |
 | [`agent.md`](agent.md) | The agent loop: five tools, six termination conditions, the trajectory table, replay, and the provider differences the adapters absorb. |
+| [`demo.md`](demo.md) | The five-minute live demo: an agent submits a refactoring that passes every test, and the harness says why it is not one. |
 
 ## Understanding it
 
@@ -25,8 +26,6 @@ Eleven pages. Start with whichever question you arrived with.
 |---|---|
 | [`roadmap.md`](roadmap.md) | The schedule, against a 47-credit course load, with the checkpoint rule. |
 | [`risks.md`](risks.md) | Seven failure modes, each mapped to whether code prevents it or only a decision does. |
-| [`positioning.md`](positioning.md) | Which numbers to quote and which to stop quoting. |
-| [`describing-it.md`](describing-it.md) | How to phrase it in an application, on a CV, and in a research statement. |
 | [`research-statement.md`](research-statement.md) | A two-page draft, assembled from the evidence. Needs your voice before it is usable. |
 
 ## Checks that answer questions faster than reading
@@ -42,12 +41,14 @@ python -m mcp_servers --self-test     # do the servers still register their tool
 ## The short version
 
 An execution-based benchmark harness for LLMs on Java, with per-call cost
-accounting. The published run found three frontier models statistically
-indistinguishable on correctness and separated by 28x on cost — because the
-tasks are saturated, which is the finding that motivates v2.
+accounting. The October 2026 run, four models, every evaluation executed in
+Docker, found that the code-generation tasks do not separate the models:
+the cheapest matches the most expensive at about 1/17th of the cost. The
+refactoring tasks do separate behaviour from structure: 82 of 84 God Class
+refactorings keep behaviour, and only 48 earn structural credit.
 
 v2 is repository-level agentic refactoring scored on three independent axes
 — behaviour preservation, structural quality, euros — with tamper
-detection. Nine of its ten modules have a working tested core. The tenth,
-the task factory, is built and has never been run; doing so is the
-remaining project.
+detection. The agent study that measures the euro axis is built and has
+not been run yet. The task factory is built and has never been run; doing
+so is the remaining project.

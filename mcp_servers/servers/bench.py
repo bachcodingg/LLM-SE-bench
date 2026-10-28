@@ -108,6 +108,11 @@ not a fragment. At most 100,000 characters.
 'fail' (none passed) or 'error' (did not compile). `weighted_score` is the
 weight-weighted fraction of tests passed.
 
+For a refactoring task (dataset godclass) passing the tests is not enough:
+`structural` holds the structural score and `structural_reasons` explains,
+in plain sentences, why it was not credited. A refactoring whose tests pass
+but whose structure is not credited is 'partial'.
+
 `metrics` carries CK metrics of the submitted code, empty when it did not
 parse. `log` holds sandbox output, truncated — check
 `truncation.truncated` before concluding something is absent from it.

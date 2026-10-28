@@ -13,7 +13,13 @@ separately:
    unchanged, and pre/post versions agree on generated inputs.
 2. **Structure improved** — CK metric deltas, with published weights.
 3. **Not gamed** — extracted classes have real behaviour, nothing was
-   deleted rather than moved, complexity was dispersed rather than hidden.
+   deleted rather than moved, complexity was dispersed rather than hidden,
+   and the facade that keeps the public API delegates instead of keeping
+   the logic.
+
+Coupling and cohesion are measured on the *extracted* classes. The facade
+is coupled to every class it delegates to by design, so including it would
+score every API-preserving decomposition as worse than the original.
 
 The composite is reported *alongside* the per-axis deltas, never instead of
 them. A single number hides disagreement between axes, and disagreement
@@ -29,7 +35,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from quality.ck_metrics import CKMetricsExtractor, ClassMetrics
@@ -44,6 +50,7 @@ __all__ = [
     "extract_public_api",
     "diff_public_api",
     "score_structure",
+    "explain_score",
     "GamingGuard",
 ]
 
@@ -62,6 +69,11 @@ SCORE_WEIGHTS: dict[str, float] = {
 #: responsibility. Splitting into shells improves every CK metric at once.
 MIN_MEANINGFUL_WMC = 2
 MIN_MEANINGFUL_METHODS = 1
+
+#: Share of the original's branching the API-preserving facade may keep.
+#: A facade that delegates has one path per method; one that kept more than
+#: this did not move the logic it claims to have extracted.
+FACADE_MAX_RETAINED_BRANCHING = 0.5
 
 _MODIFIER_WORDS = frozenset({
     "public", "protected", "private", "static", "final", "abstract",
@@ -239,6 +251,7 @@ class GamingGuard:
     behaviour_lost: bool = False
     api_broken: bool = False
     size_collapsed: bool = False
+    facade_retains_logic: bool = False
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -247,6 +260,7 @@ class GamingGuard:
         return bool(
             self.empty_classes or self.behaviour_lost
             or self.api_broken or self.size_collapsed
+            or self.facade_retains_logic
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -257,8 +271,14 @@ class GamingGuard:
             "behaviour_lost": self.behaviour_lost,
             "api_broken": self.api_broken,
             "size_collapsed": self.size_collapsed,
+            "facade_retains_logic": self.facade_retains_logic,
             "notes": self.notes,
         }
+
+
+def _branching(metrics: ClassMetrics) -> int:
+    """Decision points beyond one path per method: WMC minus method count."""
+    return max(0, metrics.wmc - metrics.num_methods)
 
 
 def _check_gaming(
@@ -266,9 +286,21 @@ def _check_gaming(
     after_metrics: list[ClassMetrics],
     api: ApiDiff,
     size_collapse_threshold: float = 0.5,
+    original_branching: int = 0,
+    facade: ClassMetrics | None = None,
 ) -> GamingGuard:
     """Apply every anti-gaming check."""
     guard = GamingGuard()
+
+    if facade is not None and original_branching > 0:
+        kept = _branching(facade) / original_branching
+        if kept > FACADE_MAX_RETAINED_BRANCHING:
+            guard.facade_retains_logic = True
+            guard.notes.append(
+                f"{facade.class_name} still holds {kept:.0%} of the original's "
+                f"branching. Classes were added around the logic, not "
+                f"extracted from it."
+            )
 
     for metrics in after_metrics:
         if metrics.num_methods == 0:
@@ -414,6 +446,51 @@ class StructuralScore:
         }
 
 
+def explain_score(payload: dict[str, Any]) -> list[str]:
+    """Plain-sentence reasons a refactoring was not credited.
+
+    Takes :meth:`StructuralScore.to_dict` output, so it also works on scores
+    read back from a results file. Empty when the score was credited. Each
+    reason starts with the axis it comes from.
+    """
+    if not payload or payload.get("credited"):
+        return []
+    behaviour = payload.get("behaviour", {})
+    gaming = payload.get("gaming", {})
+    composite = payload.get("structure", {}).get("composite", 0.0)
+
+    reasons: list[str] = []
+    if behaviour.get("tests_pass") is False:
+        reasons.append("Behaviour: the refactored code fails the original's test suite.")
+    api = behaviour.get("api", {})
+    if api.get("breaking"):
+        removed = ", ".join(api.get("removed", [])[:4])
+        reasons.append(f"API: public methods callers depend on are gone ({removed}).")
+    notes = gaming.get("notes", [])
+    reasons.extend(f"Gaming: {note}" for note in notes)
+    if not gaming.get("gamed") and composite <= 0:
+        reasons.append(
+            f"Structure: the composite is {composite:+.3f}; coupling, cohesion, "
+            f"dispersal and size did not improve on balance."
+        )
+    reasons.extend(
+        f"Note: {warning}" for warning in payload.get("warnings", []) if warning not in notes
+    )
+    return reasons
+
+
+def _dispersal(classes: list[ClassMetrics]) -> float:
+    """How close the most complex class is to an even share of total WMC.
+
+    1.0 is perfectly even; 0.0 for a single class or no complexity.
+    """
+    total = sum(m.wmc for m in classes)
+    worst = max((m.wmc for m in classes), default=0)
+    if len(classes) <= 1 or total <= 0 or worst <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (total / len(classes)) / worst))
+
+
 def _normalised_reduction(before: float, after: float) -> float:
     """Fractional improvement in a lower-is-better metric, clamped to [-1, 1].
 
@@ -475,16 +552,37 @@ def score_structure(
 
     score.api = diff_public_api(before_source, after_sources)
 
-    max_cbo = max(m.cbo for m in after_metrics)
-    max_lcom = max(m.lcom for m in after_metrics)
+    # A decomposition that keeps the public API keeps the original class as
+    # a facade, and a facade delegating to n extracted classes is coupled to
+    # all n by design. Judging coupling and cohesion on the facade therefore
+    # scores every API-preserving refactoring as negative. So the extracted
+    # classes are judged on coupling and cohesion, and the facade on whether
+    # it gave up the logic (see the guard). Types already in the original,
+    # such as nested DTOs, are neither.
+    original_names = {m.class_name for m in before_classes}
+    facade = next(
+        (m for m in after_metrics if m.class_name == before_metrics.class_name), None
+    )
+    extracted = [m for m in after_metrics if m.class_name not in original_names]
+    pieces = extracted or after_metrics
+
+    max_cbo = max(m.cbo for m in pieces)
+    max_lcom = max(m.lcom for m in pieces)
     max_wmc = max(m.wmc for m in after_metrics)
     total_loc = sum(m.loc for m in after_metrics)
     total_wmc = sum(m.wmc for m in after_metrics)
 
+    # The original may declare nested helper types (a DTO, say). They are
+    # classes in the "after" count too, so size and dispersal are measured
+    # against every original class: an unchanged file must score zero.
+    before_total_loc = sum(m.loc for m in before_classes)
+    before_total_wmc = sum(m.wmc for m in before_classes)
+
     score.before = {
         "cbo": float(before_metrics.cbo), "lcom": float(before_metrics.lcom),
-        "wmc": float(before_metrics.wmc), "loc": float(before_metrics.loc),
-        "rfc": float(before_metrics.rfc), "classes": 1.0,
+        "wmc": float(before_metrics.wmc), "loc": float(before_total_loc),
+        "rfc": float(before_metrics.rfc), "classes": float(len(before_classes)),
+        "branching": float(_branching(before_metrics)),
     }
     score.after = {
         "cbo_max": float(max_cbo), "lcom_max": float(max_lcom),
@@ -492,9 +590,13 @@ def score_structure(
         "loc_total": float(total_loc),
         "rfc_max": float(max(m.rfc for m in after_metrics)),
         "classes": float(len(after_metrics)),
+        "extracted_classes": float(len(extracted)),
     }
+    if facade is not None:
+        score.after["facade_cbo"] = float(facade.cbo)
+        score.after["facade_branching"] = float(_branching(facade))
 
-    # Coupling and cohesion: compare against the *worst* resulting class.
+    # Coupling and cohesion: compare against the *worst* extracted class.
     # The claim a decomposition makes is that every piece is better than the
     # whole was, and the worst piece is what tests that claim.
     score.coupling_reduction = _normalised_reduction(before_metrics.cbo, max_cbo)
@@ -503,12 +605,12 @@ def score_structure(
     # Complexity dispersal: did WMC spread out, or just move? Perfect
     # dispersal over n classes puts total/n in each. This measures how close
     # the worst class is to that ideal, which is why it rewards balance and
-    # not merely "fewer methods in one file".
-    if total_wmc > 0 and len(after_metrics) > 1:
-        ideal = total_wmc / len(after_metrics)
-        score.complexity_dispersal = max(0.0, min(1.0, ideal / max_wmc)) if max_wmc else 0.0
-    elif len(after_metrics) == 1:
-        score.complexity_dispersal = 0.0
+    # not merely "fewer methods in one file". Only the gain over the
+    # original's own spread is credited.
+    score.complexity_dispersal = max(
+        0.0, _dispersal(after_metrics) - _dispersal(before_classes)
+    )
+    if len(after_metrics) == 1:
         score.warnings.append(
             "A single resulting class: nothing was dispersed."
         )
@@ -516,10 +618,16 @@ def score_structure(
     # Size: credit a modest reduction, but a collapse is deletion, and the
     # guard below will catch it. Growth is expected and lightly penalised —
     # extracting classes costs boilerplate.
-    raw_size = _normalised_reduction(before_metrics.loc, total_loc)
+    raw_size = _normalised_reduction(before_total_loc, total_loc)
     score.size_reduction = raw_size if -0.25 <= raw_size <= 0.35 else max(0.0, raw_size * 0.25)
 
-    score.guard = _check_gaming(before_metrics, after_metrics, score.api)
+    score.guard = _check_gaming(
+        replace(before_metrics, loc=before_total_loc, wmc=before_total_wmc),
+        after_metrics,
+        score.api,
+        original_branching=_branching(before_metrics),
+        facade=facade,
+    )
 
     score.composite = round(sum(
         SCORE_WEIGHTS[axis] * getattr(score, axis)

@@ -13,6 +13,7 @@ import pytest
 from quality.structural import (
     SCORE_WEIGHTS,
     diff_public_api,
+    explain_score,
     extract_public_api,
     score_structure,
 )
@@ -98,7 +99,21 @@ public class ReportBuilder {
 }
 """
 
-EMPTY_SHELL_A = "public class OrderManager { private java.util.List<String> orders; }"
+FACADE = """\
+public class OrderProcessor {
+    private final OrderManager orders = new OrderManager();
+    private final ReportBuilder reports = new ReportBuilder();
+
+    public void addOrder(String order) { orders.addOrder(order); }
+    public double computeTotal(double amount) { return orders.computeTotal(amount); }
+    public int orderCount() { return orders.orderCount(); }
+    public String buildReport() { return reports.buildReport(); }
+    public void setReportHeader(String header) { reports.setReportHeader(header); }
+    public void audit(String message) { reports.audit(message); }
+}
+"""
+
+EMPTY_SHELL_A ="public class OrderManager { private java.util.List<String> orders; }"
 EMPTY_SHELL_B = "public class ReportBuilder { private String reportHeader; }"
 
 
@@ -224,6 +239,64 @@ class TestScoring:
             tests_pass=True, differential_agreement=1.0,
         )
         assert score.credited is True
+
+    def test_an_unchanged_class_with_a_nested_type_is_not_credited(self):
+        """Nested types already in the original are not extracted classes.
+
+        Counting them made an untouched file score as a decomposition.
+        """
+        original = GOD_CLASS.rstrip().rstrip("}") + (
+            "    public static class Dto {\n"
+            "        private int v;\n"
+            "        public int get() { return v; }\n"
+            "    }\n"
+            "}\n"
+        )
+        score = score_structure(original, [original], tests_pass=True)
+        assert score.complexity_dispersal == 0.0
+        assert score.composite <= 0.0
+        assert score.credited is False
+
+    def test_a_delegating_facade_is_not_penalised_for_its_coupling(self):
+        """Keeping the API means a facade coupled to every extracted class.
+
+        Scoring coupling on the facade made every API-preserving split
+        negative, which is the opposite of the finding the axis exists for.
+        """
+        score = score_structure(
+            GOD_CLASS, [FACADE, ORDERS_PART, REPORT_PART], tests_pass=True
+        )
+        assert score.after["facade_cbo"] >= 2
+        assert score.coupling_reduction >= 0.0
+        assert score.guard.facade_retains_logic is False
+        assert score.credited is True
+
+    def test_a_facade_that_keeps_the_logic_is_not_credited(self):
+        """Adding classes next to an unchanged original is not extraction."""
+        score = score_structure(
+            GOD_CLASS, [GOD_CLASS, ORDERS_PART, REPORT_PART], tests_pass=True
+        )
+        assert score.guard.facade_retains_logic is True
+        assert score.credited is False
+        assert any("branching" in note for note in score.guard.notes)
+
+    def test_a_credited_score_needs_no_explanation(self):
+        score = score_structure(
+            GOD_CLASS, [FACADE, ORDERS_PART, REPORT_PART], tests_pass=True
+        )
+        assert explain_score(score.to_dict()) == []
+
+    def test_every_failed_check_is_explained(self):
+        score = score_structure(GOD_CLASS, [ORDERS_PART], tests_pass=False)
+        reasons = explain_score(score.to_dict())
+        assert any(r.startswith("Behaviour:") for r in reasons)
+        assert any(r.startswith("API:") and "buildReport" in r for r in reasons)
+
+    def test_a_gamed_score_is_explained_by_its_guard_notes(self):
+        reasons = explain_score(
+            score_structure(GOD_CLASS, [EMPTY_SHELL_A, EMPTY_SHELL_B], tests_pass=True).to_dict()
+        )
+        assert any(r.startswith("Gaming:") and "empty shells" in r for r in reasons)
 
     def test_a_single_resulting_class_disperses_nothing(self):
         score = score_structure(GOD_CLASS, [GOD_CLASS], tests_pass=True)

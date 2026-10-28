@@ -106,6 +106,14 @@ class RateLimitConfig:
 
 # Default pricing as of early-2026 estimates (USD)
 _DEFAULT_PRICING: list[dict[str, Any]] = [
+    # Current generation, from the providers' pricing pages on 2026-10-27.
+    # Gemini 3.6 Flash doubles on 2027-01-01 ($1.50 / $7.50).
+    {"model_id": "claude-sonnet-5-5", "cost_per_prompt_token": 2e-6, "cost_per_completion_token": 10e-6},
+    {"model_id": "claude-haiku-5-5", "cost_per_prompt_token": 0.1e-6, "cost_per_completion_token": 0.5e-6},
+    {"model_id": "claude-opus-5-5", "cost_per_prompt_token": 4e-6, "cost_per_completion_token": 20e-6},
+    {"model_id": "gpt-5.6-terra", "cost_per_prompt_token": 2e-6, "cost_per_completion_token": 12e-6},
+    {"model_id": "gpt-5.6-luna", "cost_per_prompt_token": 0.2e-6, "cost_per_completion_token": 1.2e-6},
+    {"model_id": "gemini-3.6-flash", "cost_per_prompt_token": 0.75e-6, "cost_per_completion_token": 3.75e-6},
     # Claude 4.x
     {"model_id": "claude-opus-4-7", "cost_per_prompt_token": 15e-6, "cost_per_completion_token": 75e-6},
     {"model_id": "claude-sonnet-4-6", "cost_per_prompt_token": 3e-6, "cost_per_completion_token": 15e-6},
@@ -261,3 +269,19 @@ class GatewayConfig:
         if "gemini" in mid:
             return "gemini"
         raise ValueError(f"Cannot infer provider for model_id={model_id!r}")
+
+
+def rejects_temperature(model_id: str) -> bool:
+    """True for models whose API returns 400 when ``temperature`` is sent.
+
+    Claude 5-generation models and OpenAI's GPT-5 reasoning models accept only
+    their default sampling, so the parameter is omitted for them.
+    """
+    mid = model_id.lower()
+    return mid.startswith(("claude-sonnet-5", "claude-opus-5", "claude-haiku-5",
+                           "claude-fable", "gpt-5", "o3", "o4"))
+
+
+def uses_max_completion_tokens(model_id: str) -> bool:
+    """True for OpenAI models that renamed ``max_tokens`` to ``max_completion_tokens``."""
+    return model_id.lower().startswith(("gpt-5", "o3", "o4"))

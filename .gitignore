@@ -59,13 +59,25 @@ quality/*/
 !quality/tests/
 !quality/test_data/
 
-# results/ is generated too, with one exception: the published run
-# artifact the README points at. git will not descend into an ignored
-# directory, so ignore the contents rather than the directory itself.
+# results/ is generated too, with exceptions: the published run artifacts
+# the README points at, and the withdrawn May run kept as the audit's
+# record. git will not descend into an ignored directory, so ignore the
+# contents rather than the directory itself.
 results/*
 !results/2026-05-run/
 !results/2026-05-run/**
+!results/2026-10-run/
+!results/2026-10-run/**
+!results/2026-10-agent/
+!results/2026-10-agent/**
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Private planning and positioning notes. They stay on disk for the author
+# and are kept out of the public repository: they read as instructions for
+# presenting the project, not as part of it.
+llm-se-bench-upgrade-guide.txt
+docs/describing-it.md
+docs/positioning.md

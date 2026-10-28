@@ -10,45 +10,77 @@ sandbox, with per-call cost accounting.
 
 ## Results
 
-58 Java tasks, 3 runs each, 3 models. 522 evaluations, 672 API calls, $3.52.
-May 2026. Full artifact in [`results/2026-05-run/`](results/2026-05-run/).
+![evaluate_patch on three refactorings of one God Class, then the dashboard](docs/assets/demo.gif)
 
-| Model | Tasks | Pass rate | Mean cost / eval | Mean latency | Total cost |
+**Refactoring is where the models differ from what the tests say.** On the
+seven God Class tasks, 82 of 84 refactorings keep the original behaviour
+(every JUnit test passes), but only **48 earn structural credit**. Two tasks,
+`GC_004` and `GC_007`, were never credited for any model in any sample. A
+pass/fail harness would have scored nearly all of them as solved.
+
+October 2026: 58 Java tasks, 3 independent samples each, 4 models, 696
+evaluations, every one compiled and run under `javac` and JUnit in Docker.
+$2.20 in total. Full artifact in [`results/2026-10-run/`](results/2026-10-run/).
+
+| Model | Code tasks passed (51) | Refactoring: behaviour kept | Refactoring: structure credited | Cost / task | Run cost |
 |---|---|---|---|---|---|
-| `claude-sonnet-4-6` | 58 | 100.0% | $0.0148 | 6.5 s | $2.58 |
-| `gpt-4o`            | 58 | 100.0% | $0.0049 | 3.7 s | $0.85 |
-| `gemini-2.5-flash`  | 58 | 97.1%  | $0.0005 | 21.0 s | $0.09 |
+| `claude-sonnet-5-5` | 95% (90–100) | 100% | 62% (29–90) | $0.0068 | $1.17 |
+| `claude-haiku-5-5`  | 96% (90–100) | 100% | 57% (14–86) | $0.0004 | $0.07 |
+| `gpt-5.6-terra`     | 95% (88–100) | 100% | 57% (24–86) | $0.0049 | $0.85 |
+| `gpt-5.6-luna`      | 95% (90–100) | 90% (71–100) | 52% (19–86) | $0.0006 | $0.11 |
 
-**Read that table as a cost result, not a capability result.** The three
-models are not statistically distinguishable on correctness — Friedman on
-weighted score gives χ² = 4.00, p = 0.135; Cochran's Q on pass/fail gives
-p = 0.368. They *are* separated by 27× on cost and, significantly, on latency
-(Friedman χ² = 63.03, p < 0.001, Kendall's W = 0.54).
+95% bootstrap intervals over tasks in brackets. The axes are deliberately
+not summed into one score: [`leaderboard.md`](results/2026-10-run/leaderboard.md),
+[`leaderboard.png`](results/2026-10-run/leaderboard.png).
 
-At a ~100% pass rate the benchmark is saturated: it confirms all three models
-clear the bar and cannot rank them above it. That is the honest headline, and
-it is why the tasks in the next version are repository-level rather than
-single-file. See [Limitations](#limitations).
+What the run shows:
 
-Per dataset:
+- **The code-generation tasks do not separate these models.** HumanEval is
+  100% for all four; the intervals on the 51 code tasks overlap completely.
+  The cheapest model matches the most expensive one at about 1/17th of the
+  cost.
+- **Structural credit comes almost entirely from cohesion.** Across the 48
+  credited refactorings, cohesion improvement averages 0.93, complexity
+  dispersal 0.26, coupling 0.10, and size reduction is zero in every one.
+  Models split classes; they do not make them smaller.
+- **Most uncredited refactorings made the structure slightly worse.** Of
+  the 34 that kept behaviour but were not credited, 24 have a composite
+  score at or below zero, and 10 were stopped by an anti-gaming guard,
+  almost all of them a facade that still holds most of the original's
+  branching.
+- **The refactoring intervals are wide.** Seven tasks are too few to rank
+  models on structure; the gap between kept and credited is the finding,
+  not the order.
 
-| Dataset | Type | Tasks | Claude | GPT-4o | Gemini |
-|---|---|---|---|---|---|
-| `humaneval-java` | Code generation | 23 | 100% | 100% | 100% |
-| `mbpp-java` | Code generation | 18 | 100% | 100% | 94.4% |
-| `defects4j` | Bug fixing | 10 | 100% | 100% | 100% |
-| `godclass` | Refactoring | 7 | 100% | 100% | 90.5% |
+### How these numbers were checked
 
-<!--
-  Outstanding: a 10-15 s GIF of the Dash dashboard belongs here, under 5 MB.
-    llm-se-bench dashboard --port 8050
-    peek / asciinema to record, gifsicle -O3 --lossy=80 to compress
-  Put it at docs/assets/dashboard.gif and reference it as:
-    ![dashboard](docs/assets/dashboard.gif)
-  A broken image link is worse than no image, so this stays a comment
-  until the file exists. `scripts/project_status.py` reports it as
-  outstanding but non-blocking.
--->
+The run host ran out of memory partway through, and containers killed
+mid-`javac` were recorded as compile errors against the model: 98 MBPP
+evaluations for the two cheap models, plus 2 whose JUnit run was killed.
+Every recorded response was then re-executed from the response cache on a
+healthy host, with no new API calls
+([`scripts/reexecute.py`](scripts/reexecute.py)). Exactly those 100 verdicts
+changed (97 to pass, 3 to partial); nothing else moved. The sandbox now records a silently killed container as *not
+executed* instead of as a verdict, and reports what `javac` actually said.
+
+Two overlapping run processes also recorded 27 God Class samples twice.
+The later row of each pair is kept, because its code is the one on disk,
+whatever its verdict. Both counts, and the changed verdicts, are in
+[`manifest.json`](results/2026-10-run/manifest.json).
+
+The earlier May 2026 run is withdrawn. Its sandbox had silently fallen back
+to a structural check that credits every `@Test`, its repeated runs were
+mostly cache hits on run 1, and its God Class suites asserted `true`. All
+three are fixed and covered by tests.
+
+### Not run yet
+
+The agent study ([`scripts/agent_study.py`](scripts/agent_study.py)) is
+built and tested but has not been run, for lack of budget. It plots solve
+rate against a per-episode euro budget for the same four models, against
+the single-shot baseline above. Its second sweep lets the agent write to
+the test files and reports a **clean solve rate** next to the raw one.
+Estimated cost at the configured budgets is a few euros, hard-capped in code.
 
 ## Quickstart
 
@@ -85,10 +117,11 @@ generated code cannot reach the internet to look up an answer.
 list that has since moved is a guess; these rows are a historical record.
 
 **Refactoring scored on structure, not just tests.** A refactoring that
-changes nothing passes every test, so pass/fail is the wrong objective. The
-`godclass` tasks are scored on CK metric deltas — WMC, CBO, RFC, LCOM — with
-method and field coverage checks to stop a class being "decomposed" into
-empty shells.
+changes nothing passes every test, so pass/fail is the wrong objective. A
+`godclass` task passes only when its behaviour suite passes *and*
+`quality/structural.py` credits the CK metric deltas (CBO, LCOM, WMC
+dispersal, size), with guards against empty-shell classes, deleted code and
+a broken public API.
 
 **Non-parametric statistics.** Pass rates are bounded, skewed and paired
 across models. Friedman, Nemenyi post-hoc, Holm-corrected Wilcoxon, Cliff's
@@ -207,13 +240,15 @@ python scripts/project_status.py
 ```
 
 reports which modules are built, which are tested, and which have never
-been exercised end to end. Three currently fall in the last category, and
-the script says so rather than letting "built" read as "finished".
+been exercised end to end. Four currently fall in the last category (the
+agent harness, task factory, trajectory analysis and trajectory dashboard),
+and the script says so rather than letting "built" read as "finished". It
+also blocks publication of any run that lacks execution evidence.
 
 ## Tests
 
 ```bash
-pytest -q          # 1340 tests, no network, no API calls, no Docker required
+pytest -q          # ~1,350 tests, no network, no API calls, no Docker required
 ruff check .
 python scripts/security_sweep.py       # before every push to a public remote
 python scripts/regression_gate.py --check-prompts   # published numbers still valid?
@@ -222,10 +257,16 @@ python scripts/regression_gate.py --check-prompts   # published numbers still va
 ## Limitations
 
 The full list is in [`docs/methodology.md`](docs/methodology.md#limitations).
-The four that matter most:
+The ones that matter most:
 
-1. **The benchmark is saturated.** 517 of 522 evaluations passed. It cannot
-   rank models on capability, only confirm they clear a low bar.
+0. **Seven refactoring tasks.** Enough to show that kept and credited
+   differ; not enough to rank models on structure. The intervals in the
+   table span 60 to 70 points.
+1. **The structural score is one operationalisation.** It scores coupling
+   and cohesion on the extracted classes and requires the API-preserving
+   facade to give up more than half of the original's branching. Those
+   choices are documented and tested in `quality/structural.py`, but a
+   different reasonable choice would move the credited rates.
 2. **Contamination is near-certain** for the 41 `humaneval-java` and
    `mbpp-java` tasks — both derive from public benchmarks that predate every
    model evaluated. Treat those results as an upper bound.
@@ -233,9 +274,9 @@ The four that matter most:
    dependency resolution. This sidesteps the JVM environment-setup problem
    that dominates repository-level Java benchmarks, and means these numbers
    say nothing about performance on a real codebase.
-4. **One run, one scaffold, one point in time.** Three runs per task detects
-   gross instability and nothing finer, and every result is a single-shot
-   completion with one prompt template. These are conclusions about
+4. **One run, one scaffold, one point in time.** Three samples per task
+   detect gross instability and nothing finer, and every result is a
+   single-shot completion with one prompt template. These are conclusions about
    model-plus-this-scaffold, not about models.
 
 ## Licence

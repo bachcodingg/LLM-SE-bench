@@ -51,13 +51,18 @@ __all__ = [
     "MAX_PATCH_CHARS",
 ]
 
-#: Mean USD per evaluation from results/2026-05-run, used for the
-#: pre-flight budget projection.  An estimate from one run on 58 tasks: a
-#: different task mix will differ, and an unknown model has no entry at all.
+#: Mean USD per evaluation from results/2026-05-run and results/2026-10-run,
+#: used for the pre-flight budget projection.  Estimates from runs on the
+#: same 58 tasks: a different task mix will differ, and an unknown model has
+#: no entry at all.
 MEAN_COST_USD_PER_EVALUATION: dict[str, float] = {
     "claude-sonnet-4-6": 0.0149,
     "gpt-4o": 0.0049,
     "gemini-2.5-flash": 0.0006,
+    "claude-sonnet-5-5": 0.0068,
+    "gpt-5.6-terra": 0.0049,
+    "gpt-5.6-luna": 0.0006,
+    "claude-haiku-5-5": 0.0004,
 }
 
 #: Fallback projection for a model with no measured history.  Set to the
@@ -275,6 +280,7 @@ def evaluate_patch(
 
     from bench.sandbox.docker_sandbox import DockerSandbox
     from quality.ck_metrics import CKMetricsExtractor
+    from quality.structural import explain_score
 
     sandbox = DockerSandbox(timeout_test=timeout_s, timeout_compile=timeout_s)
     executed = sandbox.is_docker_available()
@@ -328,6 +334,23 @@ def evaluate_patch(
     )
     log, truncation = truncate_log(raw)
 
+    # A refactoring that changes nothing passes every behaviour test, so a
+    # refactoring task is only a pass when its structure is credited too —
+    # the same rule the benchmark applies.
+    structural: dict[str, Any] = {}
+    reasons: list[str] = []
+    scorer = getattr(adapter, "score_refactoring", None)
+    if callable(scorer) and result.compiled:
+        try:
+            score = scorer(task_id, patch, tests_pass=verdict == "pass")
+        except Exception as exc:
+            logger.debug("Structural scoring failed for %s: %s", task_id, exc)
+        else:
+            structural = score.to_dict()
+            reasons = explain_score(structural)
+            if verdict == "pass" and not score.credited:
+                verdict = "partial"
+
     return EvaluatePatchResult(
         ok=True,
         task_id=task_id,
@@ -342,6 +365,8 @@ def evaluate_patch(
         log=log,
         truncation=truncation,
         executed=executed,
+        structural=structural,
+        structural_reasons=reasons,
     )
 
 

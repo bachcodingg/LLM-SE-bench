@@ -33,6 +33,7 @@ Exit codes: 0 when nothing blocks publication, 1 when something does.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import subprocess
@@ -41,6 +42,11 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: The run the README quotes. The May 2026 run stays in results/ as a
+#: record of what the audit found, but nothing is quoted from it.
+PUBLISHED_RUN = "results/2026-10-run"
+AGENT_STUDY = "results/2026-10-agent/summary.json"
 
 #: Modules, and the evidence that each has been exercised for real. The
 #: evidence is a path that only exists once a module has *produced*
@@ -51,11 +57,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: than ``not run``, because lumping them together would dilute the signal
 #: from the module that genuinely has never run.
 MODULES: list[tuple[str, str, list[str], str]] = [
-    ("M1 agent harness", "agent", ["agent/tests"], "results/trajectories"),
+    ("M1 agent harness", "agent", ["agent/tests"], AGENT_STUDY),
     ("M2 tool layer + MCP", "mcp_servers", ["mcp_servers/tests"], ""),
     ("M3 task factory", "taskfactory", ["taskfactory/tests"], "data/mined/instances.jsonl"),
     ("M4 trajectory analysis", "agent/analysis.py", ["agent/tests/test_analysis.py"],
-     "results/trajectories"),
+     AGENT_STUDY),
     ("M5 structural scoring", "quality/structural.py", ["quality/tests/test_structural.py"], ""),
     ("M6 tamper detection", "quality/tamper.py", ["quality/tests/test_tamper.py"], ""),
     ("M7 cost governance", "llm_gateway/budget.py", ["llm_gateway/tests/test_budget.py"], ""),
@@ -64,12 +70,14 @@ MODULES: list[tuple[str, str, list[str], str]] = [
      ["framework/tests/test_trajectory_page.py"], "results/trajectories"),
     ("M10 CI + regression", "scripts/regression_gate.py", ["tests/test_scripts.py"],
      ".github/workflows/regression.yml"),
-    ("C1 LLM gateway", "llm_gateway", ["llm_gateway/tests"], "results/2026-05-run"),
-    ("C2 benchmark engine", "bench", ["bench/tests"], "results/2026-05-run"),
-    ("C3 quality analyser", "quality", ["quality/tests"], "results/2026-05-run"),
-    ("C4 statistics", "stats", ["stats/tests"], "analysis/statistical_summary.json"),
+    ("C1 LLM gateway", "llm_gateway", ["llm_gateway/tests"], PUBLISHED_RUN),
+    ("C2 benchmark engine", "bench", ["bench/tests"], PUBLISHED_RUN),
+    ("C3 quality analyser", "quality", ["quality/tests"], PUBLISHED_RUN),
+    # Evidence must be a tracked path: analysis/ is gitignored, so pointing
+    # at it reported these as run here and as never run on a fresh clone.
+    ("C4 statistics", "stats", ["stats/tests"], f"{PUBLISHED_RUN}/leaderboard.png"),
     ("C5 decision framework", "framework", ["framework/tests"],
-     "analysis/statistical_summary.json"),
+     f"{PUBLISHED_RUN}/leaderboard.png"),
 ]
 
 #: Placeholders that must not survive to a public repository.
@@ -236,18 +244,36 @@ def publication_checks() -> list[dict[str, Any]]:
         "files": {marker: files for marker, files in placeholders.items()},
     })
 
-    artifact = REPO_ROOT / "results" / "2026-05-run" / "manifest.json"
+    artifact = REPO_ROOT / PUBLISHED_RUN / "manifest.json"
     checks.append({
         "check": "run_artifact",
         "passed": artifact.exists(),
         "detail": (
-            "results/2026-05-run present. Verify it with "
+            f"{PUBLISHED_RUN} present. Verify it with "
             "`python scripts/build_run_artifact.py --check`."
             if artifact.exists() else
             "No published run artifact. The results directory is what makes "
             "the repository credible."
         ),
     })
+
+    evaluations = REPO_ROOT / PUBLISHED_RUN / "evaluations.csv"
+    if evaluations.exists():
+        with evaluations.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        unexecuted = sum(1 for row in rows if row.get("tests_executed") != "True")
+        checks.append({
+            "check": "run_executed",
+            "passed": bool(rows) and unexecuted == 0,
+            "detail": (
+                f"All {len(rows)} published evaluations executed their tests in Docker."
+                if rows and not unexecuted else
+                f"{unexecuted} of {len(rows)} published evaluations have no record "
+                f"of their tests executing. The sandbox's fallback credits every "
+                f"@Test as passing, so these numbers are not evidence. Re-run with "
+                f"Docker before quoting them."
+            ),
+        })
 
     gif = any((REPO_ROOT / "docs" / "assets").glob("*.gif")) if (
         REPO_ROOT / "docs" / "assets"

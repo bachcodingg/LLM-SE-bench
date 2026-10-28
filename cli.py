@@ -103,7 +103,7 @@ def gateway_test(model: str | None, config: str | None) -> None:
             system_message="You are a helpful assistant.",
             user_message="Reply with exactly: OK",
             temperature=0.0,
-            max_tokens=16,
+            max_tokens=1024,
         )
         try:
             response = client.send_prompt(prompt)
@@ -339,6 +339,13 @@ def run_benchmark(
                 sys.exit(1)
 
     sandbox = DockerSandbox(dry_run=dry_run)
+    if not dry_run and not sandbox.is_docker_available():
+        click.secho(
+            "Docker is unavailable. A real run without it would spend API money "
+            "and execute no tests. Start Docker, or use --dry-run.",
+            fg="red", err=True,
+        )
+        sys.exit(1)
 
     run_cfg = RunConfig(
         models=resolved_models,
@@ -355,6 +362,10 @@ def run_benchmark(
         sandbox=sandbox,
         config=run_cfg,
     )
+    if not dry_run:
+        resumed = orchestrator.resume_from_results()
+        if resumed:
+            click.echo(f"Resuming: {resumed} evaluation(s) already in {output_dir}/ are skipped.")
 
     # Optionally restrict to first N problems
     if limit is not None:
@@ -641,6 +652,9 @@ def agent_group() -> None:
 @click.option("--dry-run", is_flag=True,
               help="Mock the model and skip Docker. Makes no API call and "
                    "costs nothing; the results are not benchmark scores.")
+@click.option("--writable-tests", is_flag=True,
+              help="Leave test files writable and only instruct the agent not "
+                   "to edit them. Measures tampering; see quality.tamper.")
 @click.option("--output-dir", "-o", default="results/trajectories", show_default=True,
               help="Where trajectories are written.")
 @click.option("--compare", is_flag=True,
@@ -661,6 +675,7 @@ def agent_run(
     permissions: str,
     workers: int,
     dry_run: bool,
+    writable_tests: bool,
     output_dir: str,
     compare: bool,
 ) -> None:
@@ -765,6 +780,7 @@ def agent_run(
         total_budget_eur=total_budget_eur,
         permissions=permissions,
         workers=workers,
+        writable_tests=writable_tests,
     )
 
     if not trajectories:

@@ -303,6 +303,26 @@ class TestSendPromptPipeline:
         assert mock_api.call_count == 1  # no additional API call
 
     @patch("llm_gateway.clients.gpt4.GPT4Client._call_api")
+    def test_repeated_samples_are_not_cache_hits(
+        self, mock_api: MagicMock, gateway_config: GatewayConfig, tmp_path
+    ) -> None:
+        """Run 2 of N must be sampled, not read back from run 1."""
+        mock_api.return_value = _make_response()
+        client = self._make_concrete_client(gateway_config, tmp_path)
+
+        first = _make_prompt()
+        first.metadata["sample_index"] = 1
+        second = _make_prompt()
+        second.metadata["sample_index"] = 2
+
+        assert client.send_prompt(first).metadata.get("cache_hit") is False
+        assert client.send_prompt(second).metadata.get("cache_hit") is False
+        assert mock_api.call_count == 2
+        # Each sample is still cached under its own key.
+        assert client.send_prompt(second).metadata.get("cache_hit") is True
+        assert mock_api.call_count == 2
+
+    @patch("llm_gateway.clients.gpt4.GPT4Client._call_api")
     def test_code_extraction(
         self, mock_api: MagicMock, gateway_config: GatewayConfig, tmp_path
     ) -> None:

@@ -17,6 +17,7 @@ checkpoint/resume via ``ProgressTracker``.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -237,6 +238,15 @@ class BenchmarkOrchestrator:
         dict
             Summary statistics for the entire run.
         """
+        if not self.config.dry_run and (
+            self.sandbox.dry_run or not self.sandbox.is_docker_available()
+        ):
+            raise RuntimeError(
+                "Docker is unavailable, so no test would be executed and every "
+                "evaluation would be recorded as an error. Start Docker, or "
+                "pass dry_run=True for a run that makes no claims."
+            )
+
         self._run_stats["started_at"] = datetime.utcnow().isoformat()
         problem_ids = self.dataset.list_problem_ids()
         models = self.config.models
@@ -264,6 +274,43 @@ class BenchmarkOrchestrator:
             self._run_stats["skipped"],
         )
         return dict(self._run_stats)
+
+    def resume_from_results(self) -> int:
+        """Mark every evaluation already recorded under results/ as completed.
+
+        A run stopped part-way then resumes where it stopped. Without this a
+        restart re-scores every finished evaluation from the response cache
+        and appends it a second time. A process killed mid-write can leave a
+        partial last line; it is dropped, and that evaluation runs again.
+
+        Returns the number of evaluations marked completed.
+        """
+        resumed = 0
+        for model_id in self.config.models:
+            path = (
+                self.result_collector.results_dir / self.dataset.name
+                / model_id / "results.jsonl"
+            )
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            if text and not text.endswith("\n"):
+                text = text[: text.rfind("\n") + 1]
+                path.write_text(text, encoding="utf-8")
+                logger.warning("Dropped a partial last line from %s", path)
+            for line in text.splitlines():
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                key = (
+                    f"{self.dataset.name}/{model_id}/{row['problem_id']}"
+                    f"/run_{row.get('sample_index', 1)}"
+                )
+                if not self.progress.is_completed(key):
+                    self.progress.mark_completed(key)
+                    resumed += 1
+        return resumed
 
     def run_single(
         self,
@@ -309,6 +356,9 @@ class BenchmarkOrchestrator:
             user_message=prompt_text,
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
+            # Part of the cache key: without it, runs 2..N of an identical
+            # prompt are cache hits on run 1 and "N runs" measures nothing.
+            metadata={"sample_index": run_id},
         )
 
         # 2. Send to LLM (with retries)
@@ -345,6 +395,7 @@ class BenchmarkOrchestrator:
             response=response,
             suite=suite,
             sandbox_result=sandbox_result,
+            code=code,
         )
 
         # 6. Record
@@ -455,11 +506,25 @@ class BenchmarkOrchestrator:
         response: LLMResponse,
         suite: Any,
         sandbox_result: SandboxResult,
+        code: str = "",
     ) -> EvaluationResult:
         """Construct an EvaluationResult from sandbox output."""
         verification_results: list[VerificationResult] = []
+        structural: dict[str, Any] = {}
 
-        if not sandbox_result.compiled:
+        if not sandbox_result.executed and not self.config.dry_run:
+            # The structural fallback credits every @Test as passing. Outside
+            # an explicit dry run that is a fabricated pass, so it is recorded
+            # as an error rather than published.
+            for tc in suite.cases:
+                verification_results.append(VerificationResult(
+                    test_id=tc.test_id,
+                    passed=False,
+                    error_message="Tests not executed: Docker sandbox unavailable",
+                    severity=Severity.ERROR,
+                ))
+            verdict = Verdict.ERROR
+        elif not sandbox_result.compiled:
             # All tests fail on compilation error
             for tc in suite.cases:
                 verification_results.append(VerificationResult(
@@ -479,7 +544,9 @@ class BenchmarkOrchestrator:
                 ))
             verdict = Verdict.PASS
         elif sandbox_result.tests_passed > 0:
-            # Partial pass — mark first N as passed, rest as failed
+            # JUnit reports counts, not which suite cases passed, so the
+            # first N are marked by count only. The weighted score below
+            # uses the unweighted fraction for the same reason.
             for i, tc in enumerate(suite.cases):
                 passed = i < sandbox_result.tests_passed
                 verification_results.append(VerificationResult(
@@ -500,16 +567,29 @@ class BenchmarkOrchestrator:
 
         tests_total = len(suite.cases)
         tests_passed = sum(1 for vr in verification_results if vr.passed)
-        weighted_score = (
-            sum(
-                tc.weight
-                for tc, vr in zip(suite.cases, verification_results)
-                if vr.passed
+        if verdict == Verdict.PARTIAL:
+            weighted_score = sandbox_result.pass_rate
+        else:
+            weighted_score = (
+                sum(
+                    tc.weight
+                    for tc, vr in zip(suite.cases, verification_results)
+                    if vr.passed
+                )
+                / suite.total_weight
+                if suite.total_weight > 0
+                else 0.0
             )
-            / suite.total_weight
-            if suite.total_weight > 0
-            else 0.0
-        )
+
+        # Refactoring tasks: passing tests shows behaviour was kept, not that
+        # the structure improved. A refactoring that changes nothing passes
+        # every test, so a pass also requires a credited structural score.
+        score_refactoring = getattr(self.dataset, "score_refactoring", None)
+        if score_refactoring is not None and verdict == Verdict.PASS:
+            score = score_refactoring(problem_id, code, tests_pass=True)
+            structural = score.to_dict()
+            if not score.credited:
+                verdict = Verdict.PARTIAL
 
         runtime_errors: list[str] = []
         if sandbox_result.compile_stderr:
@@ -528,6 +608,10 @@ class BenchmarkOrchestrator:
             weighted_score=weighted_score,
             results=verification_results,
             compile_success=sandbox_result.compiled,
+            tests_executed=sandbox_result.executed,
+            sample_index=run_id,
+            cache_hit=bool(response.metadata.get("cache_hit", False)),
+            structural=structural,
             runtime_errors=runtime_errors,
             latency_ms=response.latency_ms,
         )

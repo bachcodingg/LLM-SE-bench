@@ -25,9 +25,9 @@ Usage
 -----
 ::
 
-    python scripts/regression_gate.py --baseline results/2026-05-run \\
+    python scripts/regression_gate.py --baseline results/2026-10-run \\
                                       --candidate results/nightly
-    python scripts/regression_gate.py --check-prompts --baseline results/2026-05-run
+    python scripts/regression_gate.py --check-prompts --baseline results/2026-10-run
 
 Exit codes: 0 clean, 1 regression, 2 could not run.
 """
@@ -228,7 +228,7 @@ def render_markdown(resolve: dict[str, Any] | None, prompts: dict[str, Any] | No
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    parser.add_argument("--baseline", type=Path, default=Path("results/2026-05-run"),
+    parser.add_argument("--baseline", type=Path, default=Path("results/2026-10-run"),
                         help="Committed baseline run directory.")
     parser.add_argument("--candidate", type=Path, default=None,
                         help="Run to check. Omit to check prompts only.")

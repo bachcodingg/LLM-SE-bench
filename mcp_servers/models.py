@@ -350,8 +350,9 @@ class EvaluatePatchResult(ToolResponse):
     )
     verdict: str = Field(
         default="fail",
-        description="'pass' (all tests), 'partial' (some), 'fail' (none), "
-                    "'error' (did not compile or the sandbox failed).",
+        description="'pass' (all tests), 'partial' (some, or a refactoring "
+                    "whose tests pass but whose structure is not credited), "
+                    "'fail' (none), 'error' (did not compile or the sandbox failed).",
     )
     tests_passed: int = Field(default=0)
     tests_total: int = Field(default=0)
@@ -373,6 +374,17 @@ class EvaluatePatchResult(ToolResponse):
         description="False when Docker was unavailable and only a "
                     "structural check ran. Such a result is optimistic and "
                     "is not a benchmark score.",
+    )
+    structural: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Refactoring tasks only: the structural score from "
+                    "quality.structural — whether it is credited, the per-axis "
+                    "deltas, and every anti-gaming finding with its reason.",
+    )
+    structural_reasons: list[str] = Field(
+        default_factory=list,
+        description="Why a refactoring was not credited, in plain sentences. "
+                    "Empty when it was credited or the task is not a refactoring.",
     )
 
 

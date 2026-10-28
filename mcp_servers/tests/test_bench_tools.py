@@ -10,8 +10,11 @@ rather than behaviour:
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
+from bench.sandbox.docker_sandbox import DockerSandbox
 from mcp_servers.registry import DATASET_CATEGORY, RunRegistry, get_registry
 from mcp_servers.tools.bench import (
     MEAN_COST_USD_PER_EVALUATION,
@@ -23,6 +26,17 @@ from mcp_servers.tools.bench import (
 )
 
 DATASETS = sorted(DATASET_CATEGORY)
+
+
+def _sandbox_ready() -> bool:
+    """A reachable Docker daemon *and* the sandbox image (CI has only the first)."""
+    sandbox = DockerSandbox()
+    if not sandbox.is_docker_available():
+        return False
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", sandbox.docker_image], capture_output=True,
+    )
+    return inspect.returncode == 0
 
 
 @pytest.fixture(scope="module")
@@ -164,6 +178,27 @@ public class HasCloseElements {
         assert result.ok is True
         assert result.metrics
         assert result.metrics["wmc"] >= 1
+
+    @pytest.mark.skipif(
+        not _sandbox_ready(),
+        reason="needs Docker and the sandbox image: without them the tests are "
+               "not executed, which is an error",
+    )
+    def test_an_unchanged_god_class_is_not_a_pass(self):
+        """Its tests pass. That is the point: tests cannot tell it apart."""
+        from bench.datasets.godclass import GodClassDataset
+
+        original = GodClassDataset(data_dir="data").get_original_code("GC_001")
+        result = evaluate_patch("GC_001", original)
+        assert result.ok is True
+        assert result.verdict == "partial"
+        assert result.structural["credited"] is False
+        assert any("branching" in reason for reason in result.structural_reasons)
+
+    def test_non_refactoring_tasks_carry_no_structural_score(self):
+        result = evaluate_patch("HumanEval_0", "public class A { void f() {} }")
+        assert result.structural == {}
+        assert result.structural_reasons == []
 
     def test_unparseable_patch_still_returns_a_verdict(self, broken_class):
         result = evaluate_patch("HumanEval_0", broken_class)

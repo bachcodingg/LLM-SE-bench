@@ -41,7 +41,7 @@ jobs:
         id: gate
         run: |
           python scripts/regression_gate.py \
-            --baseline results/2026-05-run \
+            --baseline results/2026-10-run \
             --check-prompts \
             --markdown gate.md
         continue-on-error: true
@@ -113,7 +113,7 @@ jobs:
         if: steps.keys.outputs.available == 'true'
         run: |
           python scripts/regression_gate.py \
-            --baseline results/2026-05-run \
+            --baseline results/2026-10-run \
             --candidate results/nightly/nightly \
             --tolerance "${{ github.event.inputs.tolerance || '0.05' }}"
       - name: Publish the nightly artifact

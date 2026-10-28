@@ -1,6 +1,6 @@
 # Research statement (draft)
 
-*Gia Bach Vo — draft of 2026-09-19. Roughly two pages. Every number here is
+*Gia Bach Vo — draft of 2026-10-28. Roughly two pages. Every number here is
 checkable in the repository; see the provenance note at the end.*
 
 *This is a draft in the literal sense: the argument is assembled from
@@ -48,20 +48,40 @@ carrying the per-token rates in force at call time — which makes the
 reported total a historical fact rather than a reconstruction from a price
 list that has since moved.
 
-The first full run covered 58 tasks across four datasets, three frontier
-models, three repeats each: **522 evaluations, 672 API calls, $3.52 total.**
+**My first published result was wrong, and finding out how shaped the
+harness.** The May 2026 run reported that three frontier models passed
+nearly every task. An audit showed the sandbox had silently fallen back to a
+structural check that credits every test as passing, that repeated runs
+were mostly cache hits on the first, and that the refactoring suites
+asserted `true`. I withdrew the numbers. The harness now records whether
+each test actually executed, refuses to publish a run that contains an
+unexecuted result, and treats a container killed for memory as *not
+executed* rather than as the model's failure — a case the October run hit
+for real, and recovered from by re-executing every recorded response
+without a single new API call. An evaluation pipeline that cannot fail
+loudly reports what its author hoped.
 
-The result was negative, and it is the reason for everything that follows.
-The three models were statistically indistinguishable on correctness — a
-Friedman test over weighted score gives χ² = 4.00, p = 0.135, and Cochran's
-Q over pass/fail gives p = 0.368 — while differing by a factor of 27 in
-cost. 517 of 522 evaluations passed.
+The October 2026 run covered 58 tasks across four datasets, four models from
+two vendors at two price tiers, three independent samples each: **696
+evaluations, every one compiled and run under JUnit, $2.20 in total.**
 
-A benchmark on which every model scores near 100% cannot rank models. It can
-only confirm they clear a low bar. The saturation is the finding: these
-tasks are single-file, self-contained, and drawn from problem sets that
-predate every model evaluated. What they measure is not capability but
-whether capability exceeds a threshold that was crossed some time ago.
+**On code generation and bug fixing, the tasks cannot rank the models.** On
+47 of the 51 tasks, every sample from every model passes. Two tasks fail
+for everyone and only two separate the models at all; a Friedman test over
+per-task pass rates gives χ² = 1.40, p = 0.71. Meanwhile the cheapest model
+costs about one seventeenth of the most expensive one. These tasks are
+single-file, self-contained, and drawn from problem sets that predate every
+model evaluated. What they measure is not capability but whether capability
+exceeds a threshold that was crossed some time ago.
+
+**On refactoring, passing the tests and refactoring come apart.** Of 84
+God Class refactorings, 82 keep the original behaviour, but only **48 earn
+structural credit**. Two of the seven tasks were never credited for any
+model in any sample. The credit that is earned comes almost entirely from
+cohesion: the models split classes, and in none of the 48 is the result
+smaller. A benchmark scoring on tests alone would have reported 82 of 84
+as solved. Seven tasks are too few to rank models on this axis (p = 0.80),
+which is the case for building many more.
 
 ## The proposal
 
@@ -75,10 +95,12 @@ rather than one**:
    see an API break and differential testing alone cannot see intent.
 
 2. **Structure improved** — Chidamber–Kemerer metric deltas with published
-   weights. Crucially, with explicit anti-gaming guards: deleting code
-   improves every CK metric simultaneously, so a decomposition is credited
-   only when the extracted classes retain the original's members and carry
-   non-trivial behaviour.
+   weights, scored on the classes the refactoring extracted. Crucially, with
+   explicit anti-gaming guards: deleting code improves every CK metric
+   simultaneously, empty classes improve coupling and cohesion for free, and
+   a facade can keep all the original logic while wrapping it in new names.
+   Each of these is detected, and the October run shows the guards firing
+   on real model output, not only on constructed examples.
 
 3. **Euros spent** — resolve rate per euro alongside raw resolve rate, with
    cache reads and writes priced at their own tiers rather than folded into
@@ -107,25 +129,32 @@ one did not write is the only convincing version of it.
 
 The harness, the agent loop, the three scoring axes, the tamper detection,
 the cost governance and the statistical machinery are implemented and
-tested: 1,340 tests, run offline, green in CI on every push. The published
-run is committed as an artifact with model identifiers, prompt-template
-hashes, dataset hashes and wall-clock dates, and a script verifies the
-artifact against a fresh rebuild.
+tested offline, without network, API calls or Docker. The October run is
+committed as an artifact with model identifiers, prompt-template hashes,
+dataset hashes, the sandbox image digest and wall-clock dates; a script
+verifies it against a fresh rebuild, and another blocks publication of any
+run without execution evidence.
 
-**The task factory is built and has not yet been run.** Mining merged pull
-requests, constructing reverse patches, deriving fail-to-pass and
-pass-to-pass sets, detecting build systems across Maven and both Gradle
-DSLs, inferring JDK versions, prewarming dependency caches for hermetic
-offline execution, and six admission gates including a five-run flake check
-— all implemented, all tested against fixtures, none exercised against a
-real repository. Producing 60–300 validated instances requires network
-access, a GitHub token, and many hours of builds.
-
-I state this plainly because the alternative is a reader discovering it, and
+Two things are built and **have not been run**, and I state both plainly
 because the distinction between *built* and *demonstrated* is exactly the
-distinction this project argues benchmarks should be careful about. A script
-in the repository reports which modules have and have not been exercised end
-to end.
+one this project argues benchmarks should be careful about.
+
+**The agent study** measures solve rate against a per-episode euro budget
+for the same four models, and in a second sweep lets the agent write to
+the test files to measure the gap between raw and clean solve rate. It is
+capped in code at a few euros; it has not been run for lack of budget.
+
+**The task factory** mines merged pull requests, constructs reverse
+patches, derives fail-to-pass and pass-to-pass sets, detects build systems
+across Maven and both Gradle DSLs, infers JDK versions, prewarms dependency
+caches for hermetic offline execution, and applies six admission gates
+including a five-run flake check — all implemented, all tested against
+fixtures, none exercised against a real repository. Producing 60–300
+validated instances requires network access, a GitHub token, and many
+hours of builds.
+
+A script in the repository reports which modules have and have not been
+exercised end to end.
 
 ## Why this is the right next problem for me
 
@@ -135,13 +164,14 @@ which is precisely the instrument the second axis needs — CK metrics and a
 severity classifier that already exist and already work. The deterministic
 JDK 17 sandbox, which is the part of JVM benchmarking that actually
 defeats people, is built and running. The cost accounting that the third
-axis needs is not a design; it is 672 rows in a database.
+axis needs is not a design; it is a row per API call in a database.
 
 What I want to do next is the part that cannot be done alone in fragments:
-mine and validate a real Java task set, run the scaffold comparison against
-an external harness, and publish the three-axis result with its clean solve
-rate and its contamination stratification. That work is slow, unglamorous,
-and the reason the field's Java numbers are thin.
+mine and validate a real Java task set large enough to rank models on
+structure, run the scaffold comparison against an external harness, and
+publish the three-axis result with its clean solve rate and its
+contamination stratification. That work is slow, unglamorous, and the
+reason the field's Java numbers are thin.
 
 I would rather spend a doctorate making one benchmark honest than making
 several of them larger.
@@ -155,10 +185,14 @@ Every figure is reproducible from the repository at
 
 | Claim | Where |
 |---|---|
-| 522 evaluations, 672 calls, $3.5241 | `results/2026-05-run/manifest.json` |
-| Friedman χ² = 4.00, p = 0.135; Cochran's Q p = 0.368 | `analysis/statistical_summary.json` |
-| 517 of 522 passed; 27× cost spread (27.5, rounded down) | `results/2026-05-run/summary.csv` |
-| 1,340 tests | `pytest -q` |
+| 696 evaluations, all executed; $2.20 | `results/2026-10-run/manifest.json` (`counts`, `cost_usd`) |
+| 47 of 51 code tasks passed by every sample; 2 by none | `results/2026-10-run/evaluations.csv` |
+| Friedman χ² = 1.40, p = 0.71 (code tasks); p = 0.80 (structural credit) | per-task pass rates from `evaluations.csv`, `scipy.stats.friedmanchisquare` |
+| ~1/17th cost (Haiku $0.0004 vs Sonnet $0.0068 per task) | `results/2026-10-run/summary.csv` |
+| 82 of 84 refactorings keep behaviour, 48 credited | `results/2026-10-run/leaderboard.md`, `evaluations.csv` |
+| Credit from cohesion, size reduction zero | `structural_*` columns of `evaluations.csv` |
+| 100 verdicts changed by re-execution, all MBPP | `manifest.json` (`reexecuted`) |
+| Why the May run was withdrawn | `README.md`, "How these numbers were checked" |
 | Module completion, including what has not run | `python scripts/project_status.py` |
 
 External figures — SWE-bench-java's 91 instances, SWE-PolyBench's 165 Java
@@ -174,6 +208,10 @@ cited properly before this goes anywhere.
 - [ ] Name the specific group or supervisor and say why them, in one
       sentence. A statement with no addressee reads as a form letter.
 - [ ] Cut to two pages if it has grown. It has a tendency to.
+- [ ] Check the two code tasks no model passes (`D4J_Lang_7`, `MBPP_1`).
+      If the task is at fault rather than the models, say so or fix it
+      before quoting "two fail for everyone".
 - [ ] Re-run `scripts/project_status.py` and update the state-of-the-work
-      section. If the task factory has run by then, that paragraph becomes
-      the strongest one here instead of the most honest one.
+      section. If the agent study or the task factory has run by then, that
+      paragraph becomes the strongest one here instead of the most honest
+      one.

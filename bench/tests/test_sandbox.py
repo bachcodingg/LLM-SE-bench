@@ -6,6 +6,7 @@ These tests use dry-run mode so they don't require Docker.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,39 @@ class TestDockerSandbox:
         assert result.compiled is True
         assert result.tests_total == 2  # 2 @Test methods
         assert result.tests_passed == 2  # Optimistic in dry-run
+
+    def test_dry_run_passes_are_marked_unexecuted(
+        self, sandbox: DockerSandbox, valid_java_code: str, valid_junit_code: str
+    ):
+        """The fallback's optimistic pass must carry its own disclaimer."""
+        result = sandbox.run(valid_java_code, valid_junit_code, "test_problem")
+        assert result.all_passed is True
+        assert result.executed is False
+        assert result.to_dict()["executed"] is False
+
+    @pytest.mark.parametrize("step", ["_docker_compile", "_docker_test"])
+    def test_a_silently_killed_container_is_not_a_verdict(
+        self, sandbox: DockerSandbox, monkeypatch: pytest.MonkeyPatch, tmp_path, step
+    ):
+        """Exit 137 and no output is the host's failure, not the model's."""
+        killed = subprocess.CompletedProcess(args=[], returncode=137, stdout="", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: killed)
+        args = (tmp_path, "A", "ATest") if step == "_docker_compile" else (tmp_path, "ATest")
+        result = getattr(sandbox, step)(*args)
+        assert result.executed is False
+        assert "no output" in result.error_message
+
+    def test_compile_errors_report_what_javac_printed(
+        self, sandbox: DockerSandbox, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ):
+        """javac runs under 2>&1, so its diagnostics arrive on stdout."""
+        failed = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="A.java:3: error: ';' expected", stderr=""
+        )
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: failed)
+        result = sandbox._docker_compile(tmp_path, "A", "ATest")
+        assert result.executed is True
+        assert "';' expected" in result.error_message
 
     def test_dry_run_empty_code(self, sandbox: DockerSandbox):
         result = sandbox.run(

@@ -48,15 +48,17 @@ reduction and cohesion improvement, measured on the classes the refactoring
 resulting classes); and size reduction, penalised when it is just deletion. The class that keeps the original's name is treated as a facade:
 it may delegate, but it must give up more than half of the original's
 branching (`max(0, WMC - methods)`), or the result is flagged as gaming.
-The other guards reject extracted classes with no methods, extracted classes
-holding a single trivial method, deleted code, and a broken public API.
+The other guards reject extracted classes with no methods, lost behaviour,
+a collapsed size and a broken public API. Extracted classes holding a single
+trivial method are noted as a warning but do not block credit on their own.
 Every refusal comes with a plain-language reason (`explain_score`).
 
 ## Sampling
 
 Temperature 0 where the provider accepts it, three samples per (model,
-problem). Some current models reject a temperature and run at their default
-sampling; the manifest records which. Greedy decoding is not deterministic
+problem). All four models in the published run reject a temperature, so all
+ran at their providers' default sampling; the manifest records this per
+model. Greedy decoding is not deterministic
 in practice either: no provider exposes a seed. The run index is part of the
 response-cache key, so the three samples are three real API calls, not one
 call scored three times. The published run found a verdict that differs

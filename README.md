@@ -1,8 +1,5 @@
 # llm-se-bench
 
-An execution-based benchmark harness that evaluates LLMs on Java code
-generation, bug fixing and architectural refactoring in a reproducible Docker
-sandbox, with per-call cost accounting.
 
 [![ci](https://github.com/bachcodingg/LLM-SE-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/bachcodingg/LLM-SE-bench/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)

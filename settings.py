@@ -1,5 +1,12 @@
 """
+settings.py — environment-driven settings shared across components.
 
+Every variable documented in ``.env.example`` is read here and nowhere
+else, so the template and the code cannot drift apart.  ``scripts/
+security_sweep.py`` enforces that correspondence.
+
+Nothing in this module reads a credential; API keys stay in
+``llm_gateway.config``, which resolves them lazily and never logs them.
 """
 
 from __future__ import annotations

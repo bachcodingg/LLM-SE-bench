@@ -9,10 +9,6 @@ Nothing in this module reads a credential; API keys stay in
 ``llm_gateway.config``, which resolves them lazily and never logs them.
 """
 
-"""
-a
-"""
-
 from __future__ import annotations
 
 import os
